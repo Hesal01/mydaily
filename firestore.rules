@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users collection - temporairement ouvert pour le seed
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Habits collection - ouvert en lecture/écriture
+    // La sécurité est gérée côté client via le token
+    match /habits/{habitDocId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if false;
+    }
+  }
+}
