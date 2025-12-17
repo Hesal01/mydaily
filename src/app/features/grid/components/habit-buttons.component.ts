@@ -10,12 +10,16 @@ import { HabitCompletions, HabitId } from '../../../core/models/habit.model';
       @for (habit of habits; track habit.id) {
         <button
           class="habit-btn"
-          [class.completed]="completions()[habit.id]"
+          [class.completed]="getCount(habit.id) > 0"
+          [class.maxed]="getCount(habit.id) >= habit.maxCount"
           [disabled]="!canEdit()"
           (click)="onToggle(habit.id)"
-          [title]="habit.name"
+          [title]="habit.name + ' (' + getCount(habit.id) + '/' + habit.maxCount + ')'"
         >
-          {{ habit.emoji }}
+          <span class="emoji">{{ habit.emoji }}</span>
+          @if (getCount(habit.id) > 0) {
+            <span class="count">{{ getCount(habit.id) }}</span>
+          }
         </button>
       }
     </div>
@@ -23,9 +27,9 @@ import { HabitCompletions, HabitId } from '../../../core/models/habit.model';
   styles: [`
     .buttons-container {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, 1fr);
       gap: 12px;
-      max-width: 240px;
+      max-width: 160px;
       margin: 0 auto;
     }
     .habit-btn {
@@ -38,8 +42,10 @@ import { HabitCompletions, HabitId } from '../../../core/models/habit.model';
       cursor: pointer;
       transition: all 0.15s ease;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      position: relative;
     }
     .habit-btn:hover:not(:disabled) {
       background: #f6f8fa;
@@ -57,6 +63,19 @@ import { HabitCompletions, HabitId } from '../../../core/models/habit.model';
       background: #218838;
       border-color: #218838;
     }
+    .habit-btn.maxed {
+      background: #1a7f37;
+      border-color: #1a7f37;
+    }
+    .emoji {
+      line-height: 1;
+    }
+    .count {
+      font-size: 12px;
+      font-weight: bold;
+      color: white;
+      margin-top: 2px;
+    }
   `]
 })
 export class HabitButtonsComponent {
@@ -66,6 +85,10 @@ export class HabitButtonsComponent {
   readonly habits = HABITS;
 
   readonly toggleHabit = output<HabitId>();
+
+  getCount(habitId: HabitId): number {
+    return this.completions()[habitId] || 0;
+  }
 
   onToggle(habitId: HabitId): void {
     if (this.canEdit()) {

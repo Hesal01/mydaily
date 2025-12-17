@@ -262,7 +262,14 @@ export class GridComponent {
   });
 
   getCompletedEmojis(completions: HabitCompletions): string[] {
-    return HABITS.filter(h => completions[h.id]).map(h => h.emoji);
+    const emojis: string[] = [];
+    for (const habit of HABITS) {
+      const count = completions[habit.id] || 0;
+      for (let i = 0; i < count; i++) {
+        emojis.push(habit.emoji);
+      }
+    }
+    return emojis;
   }
 
   getCompletions(userId: string, date: string): HabitCompletions {
@@ -271,7 +278,7 @@ export class GridComponent {
 
   getCellColor(userId: string, date: string): string {
     const completions = this.getCompletions(userId, date);
-    const count = [completions.sun, completions.doubleSun, completions.book, completions.doubleBook, completions.three, completions.network].filter(Boolean).length;
+    const count = (completions.sun || 0) + (completions.book || 0) + (completions.three || 0) + (completions.network || 0);
     return this.legendColors[Math.min(count, 6)];
   }
 

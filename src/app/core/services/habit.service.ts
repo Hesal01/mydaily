@@ -77,9 +77,14 @@ export class HabitService {
     const docId = `${date}_${userId}`;
     const docRef = doc(this.firestore, 'habits', docId);
 
+    const habit = HABITS.find(h => h.id === habitId);
+    const maxCount = habit?.maxCount ?? 1;
+    const currentCount = currentCompletions[habitId] || 0;
+    const newCount = (currentCount + 1) % (maxCount + 1);
+
     const newCompletions = {
       ...currentCompletions,
-      [habitId]: !currentCompletions[habitId]
+      [habitId]: newCount
     };
 
     await setDoc(docRef, {
@@ -94,7 +99,7 @@ export class HabitService {
     const todayHabits = habits.filter(h => h.date === date);
 
     return HABITS.map(habit => {
-      const completed = todayHabits.filter(h => h.completions[habit.id]).length;
+      const completed = todayHabits.filter(h => (h.completions[habit.id] || 0) > 0).length;
       return {
         habitId: habit.id,
         emoji: habit.emoji,

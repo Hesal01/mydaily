@@ -12,9 +12,7 @@ const ANIMALS = ['🦥', '🐘', '🦉', '🐈', '🐜', '🐆', '🐬', '🐇',
 // Habit emojis
 const HABIT_EMOJIS = {
   sun: '☀️',
-  doubleSun: '☀️☀️',
   book: '📖',
-  doubleBook: '📖📖',
   three: '3️⃣',
   network: '🌐'
 };
@@ -43,17 +41,17 @@ exports.onHabitUpdate = functions.firestore
     const date = after.date;
     console.log('UserId:', userId, 'Date:', date);
 
-    // Find which habits were just activated (false -> true)
+    // Find which habits had their count increased
     const activatedHabits = [];
-    const habitKeys = ['sun', 'doubleSun', 'book', 'doubleBook', 'three', 'network'];
+    const habitKeys = ['sun', 'book', 'three', 'network'];
 
     const beforeCompletions = before?.completions || {};
     const afterCompletions = after?.completions || {};
 
     for (const habit of habitKeys) {
-      const wasFalse = !beforeCompletions[habit];
-      const isTrue = afterCompletions[habit] === true;
-      if (wasFalse && isTrue) {
+      const beforeCount = beforeCompletions[habit] || 0;
+      const afterCount = afterCompletions[habit] || 0;
+      if (afterCount > beforeCount) {
         activatedHabits.push(habit);
       }
     }

@@ -5,6 +5,7 @@ export interface HabitConfig {
   emoji: string;
   name: string;
   description: string;
+  maxCount: number;
 }
 
 export const HABITS: readonly HabitConfig[] = [
@@ -12,37 +13,29 @@ export const HABITS: readonly HabitConfig[] = [
     id: 'sun',
     emoji: '☀️',
     name: 'Soleil',
-    description: 'Exposition au soleil'
-  },
-  {
-    id: 'doubleSun',
-    emoji: '☀️☀️',
-    name: 'Double Soleil',
-    description: 'Double exposition'
+    description: 'Exposition au soleil',
+    maxCount: 2
   },
   {
     id: 'book',
     emoji: '📖',
     name: 'Lecture',
-    description: 'Lire'
-  },
-  {
-    id: 'doubleBook',
-    emoji: '📖📖',
-    name: 'Double Lecture',
-    description: 'Lire plus'
+    description: 'Lire',
+    maxCount: 2
   },
   {
     id: 'three',
     emoji: '3️⃣',
     name: 'Trois',
-    description: 'Objectif 3'
+    description: 'Objectif 3',
+    maxCount: 5
   },
   {
     id: 'network',
     emoji: '🌐',
     name: 'Réseau',
-    description: 'Connexion sociale'
+    description: 'Connexion sociale',
+    maxCount: 2
   }
 ] as const;
 

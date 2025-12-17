@@ -1,12 +1,10 @@
-export type HabitId = 'sun' | 'doubleSun' | 'book' | 'doubleBook' | 'three' | 'network';
+export type HabitId = 'sun' | 'book' | 'three' | 'network';
 
 export interface HabitCompletions {
-  sun: boolean;
-  doubleSun: boolean;
-  book: boolean;
-  doubleBook: boolean;
-  three: boolean;
-  network: boolean;
+  sun: number;
+  book: number;
+  three: number;
+  network: number;
 }
 
 export interface HabitDay {
@@ -19,11 +17,9 @@ export interface HabitDay {
 
 export function createEmptyCompletions(): HabitCompletions {
   return {
-    sun: false,
-    doubleSun: false,
-    book: false,
-    doubleBook: false,
-    three: false,
-    network: false
+    sun: 0,
+    book: 0,
+    three: 0,
+    network: 0
   };
 }
