@@ -1,26 +1,39 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { Firestore, collection, query, where, getDocs } from '@angular/fire/firestore';
+import { SharedStorageService } from './shared-storage.service';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private firestore = inject(Firestore);
+  private sharedStorage = inject(SharedStorageService);
 
   private currentUserId = signal<string | null>(null);
   private loading = signal<boolean>(false);
+  private initialized = signal<boolean>(false);
 
   readonly userId = this.currentUserId.asReadonly();
   readonly isAuthenticated = computed(() => this.currentUserId() !== null);
   readonly isLoading = this.loading.asReadonly();
+  readonly isInitialized = this.initialized.asReadonly();
 
   constructor() {
-    this.tryRestoreSession();
+    this.initSession();
   }
 
-  private tryRestoreSession(): void {
-    const storedUserId = sessionStorage.getItem('mydaily_userId');
-    if (storedUserId) {
-      this.currentUserId.set(storedUserId);
+  private async initSession(): Promise<void> {
+    // First, try sync localStorage for immediate UI
+    const syncUserId = this.sharedStorage.getSync('mydaily_userId');
+    if (syncUserId) {
+      this.currentUserId.set(syncUserId);
     }
+
+    // Then, try async cache storage (shared with PWA)
+    const cachedUserId = await this.sharedStorage.get('mydaily_userId');
+    if (cachedUserId) {
+      this.currentUserId.set(cachedUserId);
+    }
+
+    this.initialized.set(true);
   }
 
   async authenticateWithToken(token: string): Promise<boolean> {
@@ -40,7 +53,7 @@ export class AuthService {
       const userId = userDoc.id;
 
       this.currentUserId.set(userId);
-      sessionStorage.setItem('mydaily_userId', userId);
+      await this.sharedStorage.set('mydaily_userId', userId);
 
       this.loading.set(false);
       return true;
@@ -51,8 +64,8 @@ export class AuthService {
     }
   }
 
-  logout(): void {
+  async logout(): Promise<void> {
     this.currentUserId.set(null);
-    sessionStorage.removeItem('mydaily_userId');
+    await this.sharedStorage.remove('mydaily_userId');
   }
 }

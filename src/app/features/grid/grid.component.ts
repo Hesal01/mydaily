@@ -1,15 +1,17 @@
-import { Component, inject, computed } from '@angular/core';
+import { Component, inject, computed, effect } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { HabitButtonsComponent } from './components/habit-buttons.component';
+import { InstallPromptComponent } from '../../shared/components/install-prompt.component';
 import { AuthService } from '../../core/services/auth.service';
 import { HabitService } from '../../core/services/habit.service';
 import { DateService } from '../../core/services/date.service';
+import { NotificationService } from '../../core/services/notification.service';
 import { HabitId, HabitCompletions, createEmptyCompletions } from '../../core/models/habit.model';
 
 @Component({
   selector: 'app-grid',
   standalone: true,
-  imports: [HabitButtonsComponent],
+  imports: [HabitButtonsComponent, InstallPromptComponent],
   template: `
     <div class="container">
       @if (loading()) {
@@ -62,6 +64,9 @@ import { HabitId, HabitCompletions, createEmptyCompletions } from '../../core/mo
           />
         </div>
       }
+
+      <!-- iOS install prompt -->
+      <app-install-prompt />
     </div>
   `,
   styles: [`
@@ -168,8 +173,20 @@ export class GridComponent {
   private authService = inject(AuthService);
   private habitService = inject(HabitService);
   private dateService = inject(DateService);
+  private notificationService = inject(NotificationService);
 
   readonly currentUserId = this.authService.userId;
+
+  constructor() {
+    // Request notification permission when user is logged in
+    effect(() => {
+      const userId = this.currentUserId();
+      if (userId) {
+        this.notificationService.requestPermissionAndSaveToken(userId);
+        this.notificationService.listenForMessages();
+      }
+    });
+  }
   readonly dates = this.dateService.getCurrentWeek();
   readonly today = this.dateService.getToday();
 
