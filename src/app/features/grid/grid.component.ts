@@ -7,6 +7,7 @@ import { HabitService } from '../../core/services/habit.service';
 import { DateService } from '../../core/services/date.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { HabitId, HabitCompletions, createEmptyCompletions } from '../../core/models/habit.model';
+import { HABITS } from '../../core/constants/habits.constants';
 
 @Component({
   selector: 'app-grid',
@@ -51,6 +52,19 @@ import { HabitId, HabitCompletions, createEmptyCompletions } from '../../core/mo
                 <span class="legend-box" [style.background-color]="color"></span>
               }
               <span>More</span>
+            </div>
+
+            <!-- Today's emoji bars -->
+            <div class="emoji-bars" [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'">
+              @for (userData of todayAllUsersCompletions(); track userData.userId) {
+                <div class="emoji-bar-container">
+                  <div class="emoji-bar" [class.mine]="userData.userId === currentUserId()">
+                    @for (emoji of getCompletedEmojis(userData.completions); track emoji; let i = $index) {
+                      <span class="stacked-emoji" [style.background-color]="emojiColors[i % emojiColors.length]">{{ emoji }}</span>
+                    }
+                  </div>
+                </div>
+              }
             </div>
           </div>
         </div>
@@ -159,6 +173,31 @@ import { HabitId, HabitCompletions, createEmptyCompletions } from '../../core/mo
       border-radius: 3px;
     }
 
+    /* Emoji bars */
+    .emoji-bars {
+      display: grid;
+      gap: 4px;
+      margin-top: 12px;
+      padding-bottom: 16px;
+    }
+    .emoji-bar-container {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: center;
+    }
+    .emoji-bar {
+      display: flex;
+      flex-direction: column-reverse;
+      align-items: center;
+      gap: 2px;
+    }
+    .stacked-emoji {
+      font-size: 16px;
+      padding: 4px;
+      border-radius: 8px;
+    }
+
     /* Fixed control zone */
     .control-zone {
       flex-shrink: 0;
@@ -200,6 +239,9 @@ export class GridComponent {
   // GitHub light mode colors (7 levels for 0-6 habits)
   readonly legendColors = ['#ebedf0', '#c6e48b', '#7bc96f', '#49af5d', '#2e8b47', '#1e6823', '#155a1c'];
 
+  // Colors for stacked emojis
+  readonly emojiColors = ['#fce4ec', '#e3f2fd', '#e8f5e9', '#fff3e0', '#f3e5f5', '#e0f7fa'];
+
   readonly canEdit = computed(() => this.currentUserId() !== null);
 
   readonly todayCompletions = computed((): HabitCompletions => {
@@ -207,6 +249,21 @@ export class GridComponent {
     if (!userId) return createEmptyCompletions();
     return this.habitService.getCompletionsForUserAndDate(this.habits(), userId, this.today);
   });
+
+  readonly todayAllUsersCompletions = computed(() => {
+    return this.users().map(user => ({
+      userId: user.id,
+      completions: this.habitService.getCompletionsForUserAndDate(
+        this.habits(),
+        user.id,
+        this.today
+      )
+    }));
+  });
+
+  getCompletedEmojis(completions: HabitCompletions): string[] {
+    return HABITS.filter(h => completions[h.id]).map(h => h.emoji);
+  }
 
   getCompletions(userId: string, date: string): HabitCompletions {
     return this.habitService.getCompletionsForUserAndDate(this.habits(), userId, date);
