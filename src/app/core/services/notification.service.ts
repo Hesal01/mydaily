@@ -1,5 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { Firestore, doc, updateDoc } from '@angular/fire/firestore';
+import { Firestore, doc, setDoc } from '@angular/fire/firestore';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import { getApp } from 'firebase/app';
 import { environment } from '../../../environments/environment';
@@ -22,14 +22,23 @@ export class NotificationService {
   private detectPlatform(): void {
     if (typeof window === 'undefined') return;
 
-    // Detect iOS
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    const userAgent = navigator.userAgent;
+    const isIOS = /iPad|iPhone|iPod/.test(userAgent) ||
       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    this.isIOS.set(isIOS);
 
-    // Detect standalone mode (PWA installed)
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as any).standalone === true;
+    const displayModeStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    const navigatorStandalone = (window.navigator as any).standalone;
+    const isStandalone = displayModeStandalone || navigatorStandalone === true;
+
+    console.log('Platform detection:', {
+      userAgent,
+      isIOS,
+      displayModeStandalone,
+      navigatorStandalone,
+      isStandalone
+    });
+
+    this.isIOS.set(isIOS);
     this.isStandalone.set(isStandalone);
   }
 
@@ -54,14 +63,14 @@ export class NotificationService {
       return;
     }
 
-    // iOS specific handling
-    if (this.isIOS()) {
-      if (!this.isStandalone()) {
-        console.log('iOS: App needs to be installed to home screen');
-        this.status.set('ios-needs-install');
-        return;
-      }
-    }
+    // iOS specific handling - temporarily disabled for debugging
+    // if (this.isIOS()) {
+    //   if (!this.isStandalone()) {
+    //     console.log('iOS: App needs to be installed to home screen');
+    //     this.status.set('ios-needs-install');
+    //     return;
+    //   }
+    // }
 
     try {
       const permission = await Notification.requestPermission();
@@ -77,8 +86,28 @@ export class NotificationService {
         }
 
         // Register service worker
-        const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        let registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
+        if (!registration) {
+          registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        }
         console.log('Service worker registered');
+
+        // Wait for service worker to be active
+        if (registration.installing || registration.waiting) {
+          await new Promise<void>((resolve) => {
+            const sw = registration!.installing || registration!.waiting;
+            if (!sw) {
+              resolve();
+              return;
+            }
+            sw.addEventListener('statechange', () => {
+              if (sw.state === 'activated') {
+                resolve();
+              }
+            });
+          });
+        }
+        console.log('Service worker active');
 
         // Get FCM token
         const token = await getToken(messaging, {
@@ -91,7 +120,7 @@ export class NotificationService {
 
           // Save token to Firestore
           const userRef = doc(this.firestore, 'users', userId);
-          await updateDoc(userRef, { fcmToken: token });
+          await setDoc(userRef, { fcmToken: token }, { merge: true });
           console.log('Token saved to Firestore');
         }
       } else {

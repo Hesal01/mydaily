@@ -185,7 +185,7 @@ export class GridComponent {
         this.notificationService.requestPermissionAndSaveToken(userId);
         this.notificationService.listenForMessages();
       }
-    });
+    }, { allowSignalWrites: true });
   }
   readonly dates = this.dateService.getCurrentWeek();
   readonly today = this.dateService.getToday();

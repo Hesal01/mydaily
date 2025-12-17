@@ -18,8 +18,8 @@ messaging.onBackgroundMessage((payload) => {
   const notificationTitle = payload.notification.title;
   const notificationOptions = {
     body: payload.notification.body,
-    icon: '/assets/icons/icon-192x192.png',
-    badge: '/assets/icons/icon-72x72.png'
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/icon-72x72.png'
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);

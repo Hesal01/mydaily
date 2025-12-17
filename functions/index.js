@@ -26,31 +26,51 @@ const HABIT_EMOJIS = {
 exports.onHabitUpdate = functions.firestore
   .document('habits/{habitId}')
   .onWrite(async (change, context) => {
+    console.log('=== onHabitUpdate triggered ===');
+
     const before = change.before.exists ? change.before.data() : null;
     const after = change.after.exists ? change.after.data() : null;
 
-    if (!after) return null; // Document deleted
+    console.log('Before:', JSON.stringify(before));
+    console.log('After:', JSON.stringify(after));
+
+    if (!after) {
+      console.log('Document deleted, skipping');
+      return null;
+    }
 
     const userId = after.userId;
     const date = after.date;
+    console.log('UserId:', userId, 'Date:', date);
 
     // Find which habits were just activated (false -> true)
     const activatedHabits = [];
     const habitKeys = ['sun', 'doubleSun', 'book', 'doubleBook', 'three', 'network'];
 
+    const beforeCompletions = before?.completions || {};
+    const afterCompletions = after?.completions || {};
+
     for (const habit of habitKeys) {
-      const wasFalse = !before || !before[habit];
-      const isTrue = after[habit] === true;
+      const wasFalse = !beforeCompletions[habit];
+      const isTrue = afterCompletions[habit] === true;
       if (wasFalse && isTrue) {
         activatedHabits.push(habit);
       }
     }
 
-    if (activatedHabits.length === 0) return null;
+    console.log('Activated habits:', activatedHabits);
+
+    if (activatedHabits.length === 0) {
+      console.log('No habits activated, skipping');
+      return null;
+    }
 
     // Get the user who activated the habit
     const userDoc = await db.collection('users').doc(userId).get();
-    if (!userDoc.exists) return null;
+    if (!userDoc.exists) {
+      console.log('User doc not found:', userId);
+      return null;
+    }
 
     const userData = userDoc.data();
     const userIndex = parseInt(userId.replace('user_', '')) - 1;
@@ -60,15 +80,23 @@ exports.onHabitUpdate = functions.firestore
     const usersSnapshot = await db.collection('users').get();
     const tokens = [];
 
+    console.log('Total users in DB:', usersSnapshot.size);
+
     usersSnapshot.forEach(doc => {
       const data = doc.data();
+      console.log('User:', doc.id, 'fcmToken:', data.fcmToken ? 'EXISTS' : 'NONE');
       if (data.fcmToken && doc.id !== userId) {
         // Don't notify the user who activated the habit
         tokens.push(data.fcmToken);
       }
     });
 
-    if (tokens.length === 0) return null;
+    console.log('Tokens to notify:', tokens.length);
+
+    if (tokens.length === 0) {
+      console.log('No tokens found, skipping');
+      return null;
+    }
 
     // Build notification message
     const habitEmojis = activatedHabits.map(h => HABIT_EMOJIS[h]).join(' ');
