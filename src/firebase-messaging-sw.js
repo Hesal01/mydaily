@@ -24,3 +24,28 @@ messaging.onBackgroundMessage((payload) => {
 
   self.registration.showNotification(notificationTitle, notificationOptions);
 });
+
+// Gestion du clic sur les notifications
+self.addEventListener('notificationclick', (event) => {
+  // Fermer la notification
+  event.notification.close();
+
+  // URL à ouvrir (racine de l'app)
+  const urlToOpen = '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // Chercher si une fenêtre de l'app est déjà ouverte
+      for (const client of windowClients) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          // Fenêtre trouvée, la mettre au premier plan
+          return client.focus();
+        }
+      }
+      // Aucune fenêtre ouverte, en ouvrir une nouvelle
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
+    })
+  );
+});
