@@ -19,9 +19,12 @@ const HABIT_EMOJIS = {
   network: '🌐'
 };
 
+// Batch window in minutes - notifications are grouped within this window
+const BATCH_WINDOW_MINUTES = 3;
+
 /**
  * Triggered when a habit document is updated
- * Sends push notification to all users when a habit is activated
+ * Queues a pending notification instead of sending immediately
  */
 exports.onHabitUpdate = functions.firestore
   .document('habits/{habitId}')
@@ -65,67 +68,134 @@ exports.onHabitUpdate = functions.firestore
       return null;
     }
 
-    // Get the user who activated the habit
-    const userDoc = await db.collection('users').doc(userId).get();
-    if (!userDoc.exists) {
-      console.log('User doc not found:', userId);
+    // Queue the notification instead of sending immediately
+    // This allows batching multiple habit completions from the same user
+    const pendingRef = db.collection('pendingNotifications').doc(userId);
+
+    try {
+      await db.runTransaction(async (transaction) => {
+        const pendingDoc = await transaction.get(pendingRef);
+
+        if (pendingDoc.exists) {
+          // Add to existing pending habits
+          const existingHabits = pendingDoc.data().habits || [];
+          const updatedHabits = [...new Set([...existingHabits, ...activatedHabits])];
+          transaction.update(pendingRef, {
+            habits: updatedHabits,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+          console.log('Updated pending notification for', userId, ':', updatedHabits);
+        } else {
+          // Create new pending notification
+          transaction.set(pendingRef, {
+            userId: userId,
+            habits: activatedHabits,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+          console.log('Created pending notification for', userId, ':', activatedHabits);
+        }
+      });
+
+      return { queued: true, userId, habits: activatedHabits };
+    } catch (error) {
+      console.error('Error queuing notification:', error);
+      return null;
+    }
+  });
+
+/**
+ * Scheduled function that runs every 3 minutes
+ * Sends batched notifications for all pending habit completions
+ */
+exports.sendBatchedNotifications = functions.pubsub
+  .schedule(`every ${BATCH_WINDOW_MINUTES} minutes`)
+  .onRun(async (context) => {
+    console.log('=== sendBatchedNotifications triggered ===');
+
+    // Get all pending notifications
+    const pendingSnapshot = await db.collection('pendingNotifications').get();
+
+    if (pendingSnapshot.empty) {
+      console.log('No pending notifications');
       return null;
     }
 
-    const userData = userDoc.data();
-    const userIndex = parseInt(userId.replace('user_', '')) - 1;
-    const userAnimal = ANIMALS[userIndex] || '🐾';
+    console.log('Found', pendingSnapshot.size, 'pending notifications');
 
     // Get all FCM tokens from all users
     const usersSnapshot = await db.collection('users').get();
-    const tokens = [];
-
-    console.log('Total users in DB:', usersSnapshot.size);
+    const userTokens = {};
 
     usersSnapshot.forEach(doc => {
       const data = doc.data();
-      console.log('User:', doc.id, 'fcmToken:', data.fcmToken ? 'EXISTS' : 'NONE');
-      if (data.fcmToken && doc.id !== userId) {
-        // Don't notify the user who activated the habit
-        tokens.push(data.fcmToken);
+      if (data.fcmToken) {
+        userTokens[doc.id] = data.fcmToken;
       }
     });
 
-    console.log('Tokens to notify:', tokens.length);
+    console.log('Total users with tokens:', Object.keys(userTokens).length);
 
-    if (tokens.length === 0) {
-      console.log('No tokens found, skipping');
-      return null;
-    }
+    // Process each pending notification
+    const batch = db.batch();
+    const notifications = [];
 
-    // Build notification message
-    const habitEmojis = activatedHabits.map(h => HABIT_EMOJIS[h]).join(' ');
-    const message = {
-      notification: {
-        title: `${userAnimal} a complété une habitude!`,
-        body: `${habitEmojis}`
-      },
-      tokens: tokens
-    };
+    pendingSnapshot.forEach(doc => {
+      const data = doc.data();
+      const userId = data.userId;
+      const habits = data.habits || [];
 
-    try {
-      const response = await messaging.sendEachForMulticast(message);
-      console.log(`Sent ${response.successCount} notifications, ${response.failureCount} failures`);
-
-      // Clean up invalid tokens
-      if (response.failureCount > 0) {
-        const failedTokens = [];
-        response.responses.forEach((resp, idx) => {
-          if (!resp.success) {
-            failedTokens.push(tokens[idx]);
-          }
-        });
-        console.log('Failed tokens:', failedTokens);
+      if (habits.length === 0) {
+        batch.delete(doc.ref);
+        return;
       }
 
-      return response;
-    } catch (error) {
-      console.error('Error sending notifications:', error);
-      return null;
+      // Get tokens of all users except the one who completed the habits
+      const tokens = Object.entries(userTokens)
+        .filter(([uid, token]) => uid !== userId)
+        .map(([uid, token]) => token);
+
+      if (tokens.length > 0) {
+        const userIndex = parseInt(userId.replace('user_', '')) - 1;
+        const userAnimal = ANIMALS[userIndex] || '🐾';
+        const habitEmojis = habits.map(h => HABIT_EMOJIS[h]).join(' ');
+
+        // Create summary message
+        const habitCount = habits.length;
+        const title = habitCount === 1
+          ? `${userAnimal} a complété une habitude!`
+          : `${userAnimal} a complété ${habitCount} habitudes!`;
+
+        notifications.push({
+          notification: {
+            title: title,
+            body: habitEmojis
+          },
+          tokens: tokens,
+          userId: userId
+        });
+      }
+
+      // Mark as processed by deleting
+      batch.delete(doc.ref);
+    });
+
+    // Send all notifications
+    for (const notif of notifications) {
+      try {
+        const response = await messaging.sendEachForMulticast({
+          notification: notif.notification,
+          tokens: notif.tokens
+        });
+        console.log(`Sent notification for ${notif.userId}: ${response.successCount} success, ${response.failureCount} failures`);
+      } catch (error) {
+        console.error('Error sending notification for', notif.userId, ':', error);
+      }
     }
+
+    // Commit the batch delete
+    await batch.commit();
+    console.log('Cleaned up pending notifications');
+
+    return { processed: notifications.length };
   });
