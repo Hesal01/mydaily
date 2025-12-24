@@ -1,5 +1,5 @@
 import { Component, input, output } from '@angular/core';
-import { HABITS } from '../../../core/constants/habits.constants';
+import { HABITS, HabitConfig } from '../../../core/constants/habits.constants';
 import { HabitCompletions, HabitId } from '../../../core/models/habit.model';
 
 @Component({
@@ -10,7 +10,7 @@ import { HabitCompletions, HabitId } from '../../../core/models/habit.model';
       @for (habit of habits; track habit.id) {
         <button
           class="habit-btn"
-          [class.completed]="completions()[habit.id]"
+          [class.completed]="isCompleted(habit)"
           [disabled]="!canEdit()"
           (click)="onToggle(habit.id)"
           [title]="habit.name"
@@ -40,6 +40,8 @@ import { HabitCompletions, HabitId } from '../../../core/models/habit.model';
       display: flex;
       align-items: center;
       justify-content: center;
+      position: relative;
+      touch-action: manipulation;
     }
     .habit-btn:hover:not(:disabled) {
       background: #f6f8fa;
@@ -66,6 +68,18 @@ export class HabitButtonsComponent {
   readonly habits = HABITS;
 
   readonly toggleHabit = output<HabitId>();
+
+  isCompleted(habit: HabitConfig): boolean {
+    const value = this.completions()[habit.id];
+    if (habit.maxCount) {
+      return (value as number) > 0;
+    }
+    return value as boolean;
+  }
+
+  getCount(habit: HabitConfig): number {
+    return (this.completions()[habit.id] as number) || 0;
+  }
 
   onToggle(habitId: HabitId): void {
     if (this.canEdit()) {

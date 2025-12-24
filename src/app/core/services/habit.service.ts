@@ -2,10 +2,10 @@ import { Injectable, inject } from '@angular/core';
 import { Firestore, collection, query, where, orderBy, onSnapshot, doc, setDoc, serverTimestamp, getDocs } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { HabitDay, HabitId, HabitCompletions, createEmptyCompletions } from '../models/habit.model';
+import { HabitDay, HabitId, HabitCompletions, RawHabitCompletions, createEmptyCompletions, normalizeCompletions } from '../models/habit.model';
 import { User } from '../models/user.model';
 import { DateService } from './date.service';
-import { HABITS } from '../constants/habits.constants';
+import { HABITS, getHabitConfig } from '../constants/habits.constants';
 
 export interface DailyStat {
   habitId: HabitId;
@@ -55,10 +55,16 @@ export class HabitService {
 
       const unsubscribe = onSnapshot(q,
         (snapshot) => {
-          const habits = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          } as HabitDay));
+          const habits = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              userId: data['userId'],
+              date: data['date'],
+              completions: normalizeCompletions(data['completions'] as RawHabitCompletions || {}),
+              updatedAt: data['updatedAt']
+            } as HabitDay;
+          });
           subscriber.next(habits);
         },
         (error) => subscriber.error(error)
@@ -77,15 +83,33 @@ export class HabitService {
     const docId = `${date}_${userId}`;
     const docRef = doc(this.firestore, 'habits', docId);
 
+    const habitConfig = getHabitConfig(habitId);
+    let newValue: boolean | number;
+
+    if (habitConfig?.maxCount) {
+      // Countable habit: increment and cycle
+      const currentCount = (currentCompletions[habitId] as number) || 0;
+      newValue = (currentCount + 1) % (habitConfig.maxCount + 1);
+    } else {
+      // Boolean habit: toggle
+      newValue = !currentCompletions[habitId];
+    }
+
     const newCompletions = {
       ...currentCompletions,
-      [habitId]: !currentCompletions[habitId]
+      [habitId]: newValue
     };
+
+    // Clear legacy doubleBook field when updating book
+    const firestoreCompletions: Record<string, boolean | number> = { ...newCompletions };
+    if (habitId === 'book') {
+      firestoreCompletions['doubleBook'] = false;
+    }
 
     await setDoc(docRef, {
       userId,
       date,
-      completions: newCompletions,
+      completions: firestoreCompletions,
       updatedAt: serverTimestamp()
     }, { merge: true });
   }

@@ -76,8 +76,13 @@ import { HABITS } from '../../core/constants/habits.constants';
               @for (userData of selectedDateCompletions(); track userData.userId) {
                 <div class="emoji-bar-container">
                   <div class="emoji-bar" [class.mine]="userData.userId === currentUserId()">
-                    @for (emoji of getCompletedEmojis(userData.completions); track emoji; let i = $index) {
-                      <span class="stacked-emoji" [style.background-color]="emojiColors[i % emojiColors.length]">{{ emoji }}</span>
+                    @for (item of getCompletedEmojis(userData.completions); track item.emoji; let i = $index) {
+                      <span class="stacked-emoji" [style.background-color]="emojiColors[i % emojiColors.length]">
+                        {{ item.emoji }}
+                        @if (item.count) {
+                          <span class="emoji-count">x{{ item.count }}</span>
+                        }
+                      </span>
                     }
                   </div>
                 </div>
@@ -263,6 +268,15 @@ import { HABITS } from '../../core/constants/habits.constants';
       font-size: 16px;
       padding: 4px;
       border-radius: 8px;
+      position: relative;
+    }
+    .emoji-count {
+      position: absolute;
+      top: -2px;
+      right: -4px;
+      font-size: 8px;
+      font-weight: 600;
+      color: #1f2328;
     }
 
     /* Fixed control zone */
@@ -351,8 +365,20 @@ export class GridComponent {
 
   readonly canNavigateNext = computed(() => this.selectedDate() !== this.today);
 
-  getCompletedEmojis(completions: HabitCompletions): string[] {
-    return HABITS.filter(h => completions[h.id]).map(h => h.emoji);
+  getCompletedEmojis(completions: HabitCompletions): { emoji: string; count?: number }[] {
+    const result: { emoji: string; count?: number }[] = [];
+    for (const habit of HABITS) {
+      const value = completions[habit.id];
+      if (habit.maxCount) {
+        const count = value as number;
+        if (count > 0) {
+          result.push({ emoji: habit.emoji, count: count > 1 ? count : undefined });
+        }
+      } else if (value) {
+        result.push({ emoji: habit.emoji });
+      }
+    }
+    return result;
   }
 
   getCompletions(userId: string, date: string): HabitCompletions {
@@ -361,7 +387,13 @@ export class GridComponent {
 
   getCellColor(userId: string, date: string): string {
     const completions = this.getCompletions(userId, date);
-    const count = [completions.sun, completions.doubleSun, completions.book, completions.doubleBook, completions.three, completions.network].filter(Boolean).length;
+    // Count boolean habits + book count (capped at 5)
+    let count = 0;
+    if (completions.sun) count++;
+    if (completions.doubleSun) count++;
+    if (completions.book > 0) count += Math.min(completions.book, 5);
+    if (completions.three) count++;
+    if (completions.network) count++;
     return this.legendColors[Math.min(count, 6)];
   }
 

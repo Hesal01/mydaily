@@ -5,6 +5,7 @@ export interface HabitConfig {
   emoji: string;
   name: string;
   description: string;
+  maxCount?: number; // For countable habits (multi-click)
 }
 
 export const HABITS: readonly HabitConfig[] = [
@@ -24,13 +25,8 @@ export const HABITS: readonly HabitConfig[] = [
     id: 'book',
     emoji: '📖',
     name: 'Lecture',
-    description: 'Lire'
-  },
-  {
-    id: 'doubleBook',
-    emoji: '📖📖',
-    name: 'Double Lecture',
-    description: 'Lire plus'
+    description: 'Lire',
+    maxCount: 5
   },
   {
     id: 'three',
@@ -47,3 +43,7 @@ export const HABITS: readonly HabitConfig[] = [
 ] as const;
 
 export const HABIT_IDS: HabitId[] = HABITS.map(h => h.id);
+
+export function getHabitConfig(id: HabitId): HabitConfig | undefined {
+  return HABITS.find(h => h.id === id);
+}
