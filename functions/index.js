@@ -72,67 +72,94 @@ exports.onHabitUpdate = functions.firestore
       return null;
     }
 
-    // Get the user who activated the habit
-    const userDoc = await db.collection('users').doc(userId).get();
-    if (!userDoc.exists) {
-      console.log('User doc not found:', userId);
+    // Add to notification queue instead of sending directly (batching)
+    const queueRef = db.collection('notificationQueue').doc(`${date}_${userId}`);
+
+    await queueRef.set({
+      userId,
+      date,
+      habits: admin.firestore.FieldValue.arrayUnion(...activatedHabits),
+      queuedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    console.log('Added to notification queue:', activatedHabits);
+    return null;
+  });
+
+/**
+ * Helper function to send batched notification
+ */
+async function sendBatchedNotification(userId, habits) {
+  const userIndex = parseInt(userId.replace('user_', '')) - 1;
+  const userAnimal = ANIMALS[userIndex] || '🐾';
+
+  // Get all FCM tokens from all users except the one who activated
+  const usersSnapshot = await db.collection('users').get();
+  const tokens = [];
+
+  usersSnapshot.forEach(doc => {
+    const data = doc.data();
+    if (data.fcmToken && doc.id !== userId) {
+      tokens.push(data.fcmToken);
+    }
+  });
+
+  if (tokens.length === 0) {
+    console.log('No tokens found for user:', userId);
+    return null;
+  }
+
+  // Build notification with all habits
+  const habitEmojis = habits.map(h => HABIT_EMOJIS[h]).join(' ');
+  const message = {
+    notification: {
+      title: `${userAnimal} a complété ${habits.length > 1 ? 'des habitudes' : 'une habitude'}!`,
+      body: habitEmojis
+    },
+    tokens: tokens
+  };
+
+  try {
+    const response = await messaging.sendEachForMulticast(message);
+    console.log(`Sent ${response.successCount} notifications for ${userId}, ${response.failureCount} failures`);
+    return response;
+  } catch (error) {
+    console.error('Error sending batched notification:', error);
+    return null;
+  }
+}
+
+/**
+ * Scheduled function to process notification queue
+ * Runs every minute and sends batched notifications
+ */
+exports.processNotificationQueue = functions.pubsub
+  .schedule('every 1 minutes')
+  .onRun(async (context) => {
+    const now = Date.now();
+    const BATCH_DELAY_MS = 10000; // 10 seconds minimum delay
+
+    // Get queue entries older than 10 seconds
+    const cutoffTime = new Date(now - BATCH_DELAY_MS);
+    const queueSnapshot = await db.collection('notificationQueue')
+      .where('queuedAt', '<', cutoffTime)
+      .get();
+
+    if (queueSnapshot.empty) {
+      console.log('Notification queue empty');
       return null;
     }
 
-    const userData = userDoc.data();
-    const userIndex = parseInt(userId.replace('user_', '')) - 1;
-    const userAnimal = ANIMALS[userIndex] || '🐾';
+    console.log(`Processing ${queueSnapshot.size} queued notifications`);
 
-    // Get all FCM tokens from all users
-    const usersSnapshot = await db.collection('users').get();
-    const tokens = [];
-
-    console.log('Total users in DB:', usersSnapshot.size);
-
-    usersSnapshot.forEach(doc => {
+    // Process each queued notification
+    for (const doc of queueSnapshot.docs) {
       const data = doc.data();
-      console.log('User:', doc.id, 'fcmToken:', data.fcmToken ? 'EXISTS' : 'NONE');
-      if (data.fcmToken && doc.id !== userId) {
-        // Don't notify the user who activated the habit
-        tokens.push(data.fcmToken);
-      }
-    });
+      console.log(`Processing queue for user ${data.userId}:`, data.habits);
 
-    console.log('Tokens to notify:', tokens.length);
-
-    if (tokens.length === 0) {
-      console.log('No tokens found, skipping');
-      return null;
+      await sendBatchedNotification(data.userId, data.habits);
+      await doc.ref.delete();
     }
 
-    // Build notification message
-    const habitEmojis = activatedHabits.map(h => HABIT_EMOJIS[h]).join(' ');
-    const message = {
-      notification: {
-        title: `${userAnimal} a complété une habitude!`,
-        body: `${habitEmojis}`
-      },
-      tokens: tokens
-    };
-
-    try {
-      const response = await messaging.sendEachForMulticast(message);
-      console.log(`Sent ${response.successCount} notifications, ${response.failureCount} failures`);
-
-      // Clean up invalid tokens
-      if (response.failureCount > 0) {
-        const failedTokens = [];
-        response.responses.forEach((resp, idx) => {
-          if (!resp.success) {
-            failedTokens.push(tokens[idx]);
-          }
-        });
-        console.log('Failed tokens:', failedTokens);
-      }
-
-      return response;
-    } catch (error) {
-      console.error('Error sending notifications:', error);
-      return null;
-    }
+    return null;
   });
