@@ -14,15 +14,8 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
   console.log('Background message received:', payload);
-
-  const notificationTitle = payload.notification.title;
-  const notificationOptions = {
-    body: payload.notification.body,
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/icon-72x72.png'
-  };
-
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  // FCM affiche automatiquement la notification quand le message contient un payload "notification"
+  // Ne pas appeler showNotification() ici pour éviter les doublons
 });
 
 // Gestion du clic sur les notifications

@@ -10,6 +10,7 @@ export type NotificationStatus = 'ready' | 'ios-needs-install' | 'not-supported'
 export class NotificationService {
   private firestore = inject(Firestore);
   private messaging: Messaging | null = null;
+  private messageListenerActive = false;
 
   readonly status = signal<NotificationStatus>('pending');
   readonly isIOS = signal(false);
@@ -134,6 +135,7 @@ export class NotificationService {
   }
 
   listenForMessages(): void {
+    if (this.messageListenerActive) return;
     if (typeof window === 'undefined') return;
     if (!('Notification' in window) || Notification.permission !== 'granted') {
       return;
@@ -153,6 +155,7 @@ export class NotificationService {
           });
         }
       });
+      this.messageListenerActive = true;
     } catch (error) {
       console.error('Error setting up message listener:', error);
     }
