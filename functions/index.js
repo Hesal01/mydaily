@@ -43,6 +43,13 @@ exports.onHabitUpdate = functions.firestore
     const date = after.date;
     console.log('UserId:', userId, 'Date:', date);
 
+    // Skip notifications for past dates
+    const today = new Date().toISOString().split('T')[0];
+    if (date < today) {
+      console.log('Past date, skipping notification');
+      return null;
+    }
+
     // Find which habits were just activated (false -> true)
     const activatedHabits = [];
     const habitKeys = ['sun', 'doubleSun', 'book', 'doubleBook', 'three', 'network'];

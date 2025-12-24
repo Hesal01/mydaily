@@ -1,4 +1,4 @@
-import { Component, inject, computed, effect } from '@angular/core';
+import { Component, inject, computed, effect, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { HabitButtonsComponent } from './components/habit-buttons.component';
 import { InstallPromptComponent } from '../../shared/components/install-prompt.component';
@@ -34,12 +34,13 @@ import { HABITS } from '../../core/constants/habits.constants';
 
             <!-- Grid -->
             <div class="grid" [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'">
-              @for (date of dates; track date) {
+              @for (date of dates(); track date) {
                 @for (user of users(); track user.id) {
                   <div
                     class="cell"
                     [class.mine]="user.id === currentUserId()"
                     [class.today]="date === today"
+                    [class.selected]="date === selectedDate()"
                     [style.background-color]="getCellColor(user.id, date)"
                   ></div>
                 }
@@ -54,9 +55,25 @@ import { HABITS } from '../../core/constants/habits.constants';
               <span>More</span>
             </div>
 
-            <!-- Today's emoji bars -->
-            <div class="emoji-bars" [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'">
-              @for (userData of todayAllUsersCompletions(); track userData.userId) {
+            <!-- Day navigation header -->
+            <div class="day-navigation">
+              <button class="nav-arrow" (click)="navigateToPreviousDay()">
+                ‹
+              </button>
+              <button class="date-display" [class.is-today]="isSelectedDateToday()" (click)="resetToToday()">
+                {{ selectedDateDisplay() }}
+              </button>
+              <button class="nav-arrow" [class.disabled]="!canNavigateNext()" [disabled]="!canNavigateNext()" (click)="navigateToNextDay()">
+                ›
+              </button>
+            </div>
+
+            <!-- Swipeable emoji bars -->
+            <div class="emoji-bars"
+                 [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'"
+                 (touchstart)="onTouchStart($event)"
+                 (touchend)="onTouchEnd($event)">
+              @for (userData of selectedDateCompletions(); track userData.userId) {
                 <div class="emoji-bar-container">
                   <div class="emoji-bar" [class.mine]="userData.userId === currentUserId()">
                     @for (emoji of getCompletedEmojis(userData.completions); track emoji; let i = $index) {
@@ -72,7 +89,7 @@ import { HABITS } from '../../core/constants/habits.constants';
         <!-- Fixed control zone -->
         <div class="control-zone">
           <app-habit-buttons
-            [completions]="todayCompletions()"
+            [completions]="selectedDateUserCompletions()"
             [canEdit]="canEdit()"
             (toggleHabit)="onToggleHabit($event)"
           />
@@ -151,6 +168,9 @@ import { HABITS } from '../../core/constants/habits.constants';
     .cell.mine {
       filter: brightness(0.92);
     }
+    .cell.selected {
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+    }
     .legend {
       display: flex;
       align-items: center;
@@ -173,11 +193,58 @@ import { HABITS } from '../../core/constants/habits.constants';
       border-radius: 3px;
     }
 
+    /* Day navigation */
+    .day-navigation {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 16px;
+      margin-bottom: 12px;
+    }
+    .nav-arrow {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid #d0d7de;
+      background: #ffffff;
+      color: #1f2328;
+      font-size: 20px;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .nav-arrow:active {
+      background: #f6f8fa;
+    }
+    .nav-arrow.disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+    .date-display {
+      min-width: 100px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid #d0d7de;
+      background: #f6f8fa;
+      color: #1f2328;
+      font-size: 14px;
+      font-weight: 500;
+      text-transform: capitalize;
+      cursor: pointer;
+    }
+    .date-display.is-today {
+      background: #2da44e;
+      border-color: #2da44e;
+      color: #ffffff;
+    }
+
     /* Emoji bars */
     .emoji-bars {
       display: grid;
       gap: 4px;
-      margin-top: 12px;
       padding-bottom: 16px;
     }
     .emoji-bar-container {
@@ -226,8 +293,11 @@ export class GridComponent {
       }
     }, { allowSignalWrites: true });
   }
-  readonly dates = this.dateService.getCurrentWeek();
   readonly today = this.dateService.getToday();
+
+  // Day navigation state
+  readonly selectedDate = signal<string>(this.today);
+  readonly dates = computed(() => this.dateService.getWeekForDate(this.selectedDate()));
 
   readonly users = toSignal(this.habitService.getAllUsers(), { initialValue: [] });
   readonly habits = toSignal(this.habitService.getAllHabitsRealtime(), { initialValue: [] });
@@ -244,10 +314,10 @@ export class GridComponent {
 
   readonly canEdit = computed(() => this.currentUserId() !== null);
 
-  readonly todayCompletions = computed((): HabitCompletions => {
+  readonly selectedDateUserCompletions = computed((): HabitCompletions => {
     const userId = this.currentUserId();
     if (!userId) return createEmptyCompletions();
-    return this.habitService.getCompletionsForUserAndDate(this.habits(), userId, this.today);
+    return this.habitService.getCompletionsForUserAndDate(this.habits(), userId, this.selectedDate());
   });
 
   readonly todayAllUsersCompletions = computed(() => {
@@ -260,6 +330,26 @@ export class GridComponent {
       )
     }));
   });
+
+  readonly selectedDateCompletions = computed(() => {
+    return this.users().map(user => ({
+      userId: user.id,
+      completions: this.habitService.getCompletionsForUserAndDate(
+        this.habits(),
+        user.id,
+        this.selectedDate()
+      )
+    }));
+  });
+
+  readonly selectedDateDisplay = computed(() => {
+    const date = this.selectedDate();
+    return `${this.dateService.formatDayName(date)} ${this.dateService.formatDisplayDate(date)}`;
+  });
+
+  readonly isSelectedDateToday = computed(() => this.selectedDate() === this.today);
+
+  readonly canNavigateNext = computed(() => this.selectedDate() !== this.today);
 
   getCompletedEmojis(completions: HabitCompletions): string[] {
     return HABITS.filter(h => completions[h.id]).map(h => h.emoji);
@@ -281,9 +371,52 @@ export class GridComponent {
 
     await this.habitService.toggleHabit(
       userId,
-      this.today,
+      this.selectedDate(),
       habitId,
-      this.todayCompletions()
+      this.selectedDateUserCompletions()
     );
+  }
+
+  // Day navigation methods
+  navigateToPreviousDay(): void {
+    const current = new Date(this.selectedDate());
+    current.setDate(current.getDate() - 1);
+    this.selectedDate.set(this.dateService.formatDate(current));
+  }
+
+  navigateToNextDay(): void {
+    if (this.canNavigateNext()) {
+      const current = new Date(this.selectedDate());
+      current.setDate(current.getDate() + 1);
+      this.selectedDate.set(this.dateService.formatDate(current));
+    }
+  }
+
+  resetToToday(): void {
+    this.selectedDate.set(this.today);
+  }
+
+  // Swipe handling
+  private touchStartX = 0;
+  private touchStartY = 0;
+  private readonly SWIPE_THRESHOLD = 50;
+
+  onTouchStart(event: TouchEvent): void {
+    this.touchStartX = event.touches[0].clientX;
+    this.touchStartY = event.touches[0].clientY;
+  }
+
+  onTouchEnd(event: TouchEvent): void {
+    const deltaX = event.changedTouches[0].clientX - this.touchStartX;
+    const deltaY = event.changedTouches[0].clientY - this.touchStartY;
+
+    // Horizontal swipe only
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > this.SWIPE_THRESHOLD) {
+      if (deltaX < 0) {
+        this.navigateToPreviousDay(); // Swipe left = previous day
+      } else if (this.canNavigateNext()) {
+        this.navigateToNextDay(); // Swipe right = next day
+      }
+    }
   }
 }

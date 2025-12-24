@@ -17,6 +17,10 @@ export class DateService {
   }
 
   getCurrentWeek(): string[] {
+    return this.getWeekByOffset(0);
+  }
+
+  getWeekByOffset(weekOffset: number): string[] {
     const dates: string[] = [];
     const today = new Date();
     const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ...
@@ -25,6 +29,9 @@ export class DateService {
     const monday = new Date(today);
     const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
     monday.setDate(today.getDate() - daysFromMonday);
+
+    // Apply week offset
+    monday.setDate(monday.getDate() + (weekOffset * 7));
 
     // Generate Monday to Sunday
     for (let i = 0; i < 7; i++) {
@@ -56,5 +63,21 @@ export class DateService {
 
   getToday(): string {
     return this.formatDate(new Date());
+  }
+
+  getWeekForDate(dateStr: string): string[] {
+    const date = new Date(dateStr);
+    const dayOfWeek = date.getDay();
+    const monday = new Date(date);
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    monday.setDate(date.getDate() - daysFromMonday);
+
+    const dates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      dates.push(this.formatDate(d));
+    }
+    return dates;
   }
 }
