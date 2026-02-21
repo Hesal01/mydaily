@@ -6,7 +6,7 @@ import { User } from '../../../core/models/user.model';
   standalone: true,
   template: `
     <div class="quran-progress">
-      <div class="title">Progression Coran</div>
+      <div class="title">Progression lecture</div>
       <div class="users-list">
         @for (user of users(); track user.id; let i = $index) {
           <div class="user-row" [class.mine]="user.id === currentUserId()">
