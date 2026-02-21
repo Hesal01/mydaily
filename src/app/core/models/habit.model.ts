@@ -3,7 +3,7 @@ export type HabitId = 'sun' | 'doubleSun' | 'book' | 'three' | 'network';
 export interface HabitCompletions {
   sun: boolean;
   doubleSun: boolean;
-  book: number;
+  book: boolean;
   three: boolean;
   network: boolean;
 }
@@ -30,7 +30,7 @@ export function createEmptyCompletions(): HabitCompletions {
   return {
     sun: false,
     doubleSun: false,
-    book: 0,
+    book: false,
     three: false,
     network: false
   };
@@ -38,21 +38,21 @@ export function createEmptyCompletions(): HabitCompletions {
 
 // Convert raw Firestore data to normalized completions
 export function normalizeCompletions(raw: RawHabitCompletions): HabitCompletions {
-  let bookCount = 0;
+  let bookDone = false;
   if (typeof raw.book === 'number') {
-    bookCount = raw.book;
+    bookDone = raw.book > 0;
   } else if (raw.book === true) {
-    bookCount = 1;
+    bookDone = true;
   }
-  // Legacy: doubleBook adds 1 more (book + doubleBook = 2 total)
+  // Legacy: doubleBook also counts
   if (raw.doubleBook === true) {
-    bookCount += 1;
+    bookDone = true;
   }
 
   return {
     sun: raw.sun ?? false,
     doubleSun: raw.doubleSun ?? false,
-    book: Math.min(bookCount, 5),
+    book: bookDone,
     three: raw.three ?? false,
     network: raw.network ?? false
   };

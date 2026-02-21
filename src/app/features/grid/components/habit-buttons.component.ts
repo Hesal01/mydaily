@@ -1,5 +1,5 @@
 import { Component, input, output } from '@angular/core';
-import { HABITS, HabitConfig } from '../../../core/constants/habits.constants';
+import { HABITS } from '../../../core/constants/habits.constants';
 import { HabitCompletions, HabitId } from '../../../core/models/habit.model';
 
 @Component({
@@ -10,7 +10,7 @@ import { HabitCompletions, HabitId } from '../../../core/models/habit.model';
       @for (habit of habits; track habit.id) {
         <button
           class="habit-btn"
-          [class.completed]="isCompleted(habit)"
+          [class.completed]="isCompleted(habit.id)"
           [disabled]="!canEdit()"
           (click)="onToggle(habit.id)"
           [title]="habit.name"
@@ -69,16 +69,8 @@ export class HabitButtonsComponent {
 
   readonly toggleHabit = output<HabitId>();
 
-  isCompleted(habit: HabitConfig): boolean {
-    const value = this.completions()[habit.id];
-    if (habit.maxCount) {
-      return (value as number) > 0;
-    }
-    return value as boolean;
-  }
-
-  getCount(habit: HabitConfig): number {
-    return (this.completions()[habit.id] as number) || 0;
+  isCompleted(habitId: HabitId): boolean {
+    return !!this.completions()[habitId];
   }
 
   onToggle(habitId: HabitId): void {

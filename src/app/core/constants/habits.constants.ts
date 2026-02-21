@@ -25,8 +25,7 @@ export const HABITS: readonly HabitConfig[] = [
     id: 'book',
     emoji: '📖',
     name: 'Lecture',
-    description: 'Lire',
-    maxCount: 5
+    description: 'Lire'
   },
   {
     id: 'three',

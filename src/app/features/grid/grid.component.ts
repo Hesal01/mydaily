@@ -1,6 +1,8 @@
 import { Component, inject, computed, effect, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { HabitButtonsComponent } from './components/habit-buttons.component';
+import { QuranModalComponent } from './components/quran-modal.component';
+import { QuranProgressComponent } from './components/quran-progress.component';
 import { InstallPromptComponent } from '../../shared/components/install-prompt.component';
 import { AuthService } from '../../core/services/auth.service';
 import { HabitService } from '../../core/services/habit.service';
@@ -12,7 +14,7 @@ import { HABITS } from '../../core/constants/habits.constants';
 @Component({
   selector: 'app-grid',
   standalone: true,
-  imports: [HabitButtonsComponent, InstallPromptComponent],
+  imports: [HabitButtonsComponent, QuranModalComponent, QuranProgressComponent, InstallPromptComponent],
   template: `
     <div class="container">
       @if (loading()) {
@@ -20,75 +22,96 @@ import { HABITS } from '../../core/constants/habits.constants';
           <div class="spinner"></div>
         </div>
       } @else {
-        <!-- Scrollable calendar zone -->
-        <div class="calendar-zone">
-          <div class="graph">
-            <!-- Animal header -->
-            <div class="animal-header" [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'">
-              @for (user of users(); track user.id; let i = $index) {
-                <div class="animal" [class.mine]="user.id === currentUserId()">
-                  {{ animals[i] }}
-                </div>
-              }
-            </div>
+        <!-- Swipeable screens wrapper -->
+        <div class="screens-viewport"
+             (touchstart)="onScreenTouchStart($event)"
+             (touchend)="onScreenTouchEnd($event)">
+          <div class="screens-track" [style.transform]="'translateX(' + (-currentScreen() * 100) + '%)'">
+            <!-- Screen 0: Habits grid -->
+            <div class="screen">
+              <div class="calendar-zone">
+                <div class="graph">
+                  <!-- Animal header -->
+                  <div class="animal-header" [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'">
+                    @for (user of users(); track user.id; let i = $index) {
+                      <div class="animal" [class.mine]="user.id === currentUserId()">
+                        {{ animals[i] }}
+                      </div>
+                    }
+                  </div>
 
-            <!-- Grid -->
-            <div class="grid" [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'">
-              @for (date of dates(); track date) {
-                @for (user of users(); track user.id) {
-                  <div
-                    class="cell"
-                    [class.mine]="user.id === currentUserId()"
-                    [class.today]="date === today"
-                    [class.selected]="date === selectedDate()"
-                    [style.background-color]="getCellColor(user.id, date)"
-                  ></div>
-                }
-              }
-            </div>
+                  <!-- Grid -->
+                  <div class="grid" [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'">
+                    @for (date of dates(); track date) {
+                      @for (user of users(); track user.id) {
+                        <div
+                          class="cell"
+                          [class.mine]="user.id === currentUserId()"
+                          [class.today]="date === today"
+                          [class.selected]="date === selectedDate()"
+                          [style.background-color]="getCellColor(user.id, date)"
+                        ></div>
+                      }
+                    }
+                  </div>
 
-            <div class="legend">
-              <span>Less</span>
-              @for (color of legendColors; track color) {
-                <span class="legend-box" [style.background-color]="color"></span>
-              }
-              <span>More</span>
-            </div>
+                  <div class="legend">
+                    <span>Less</span>
+                    @for (color of legendColors; track color) {
+                      <span class="legend-box" [style.background-color]="color"></span>
+                    }
+                    <span>More</span>
+                  </div>
 
-            <!-- Day navigation header -->
-            <div class="day-navigation">
-              <button class="nav-arrow" (click)="navigateToPreviousDay()">
-                ‹
-              </button>
-              <button class="date-display" [class.is-today]="isSelectedDateToday()" (click)="resetToToday()">
-                {{ selectedDateDisplay() }}
-              </button>
-              <button class="nav-arrow" [class.disabled]="!canNavigateNext()" [disabled]="!canNavigateNext()" (click)="navigateToNextDay()">
-                ›
-              </button>
-            </div>
+                  <!-- Day navigation header -->
+                  <div class="day-navigation">
+                    <button class="nav-arrow" (click)="navigateToPreviousDay()">
+                      ‹
+                    </button>
+                    <button class="date-display" [class.is-today]="isSelectedDateToday()" (click)="resetToToday()">
+                      {{ selectedDateDisplay() }}
+                    </button>
+                    <button class="nav-arrow" [class.disabled]="!canNavigateNext()" [disabled]="!canNavigateNext()" (click)="navigateToNextDay()">
+                      ›
+                    </button>
+                  </div>
 
-            <!-- Swipeable emoji bars -->
-            <div class="emoji-bars"
-                 [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'"
-                 (touchstart)="onTouchStart($event)"
-                 (touchend)="onTouchEnd($event)">
-              @for (userData of selectedDateCompletions(); track userData.userId) {
-                <div class="emoji-bar-container">
-                  <div class="emoji-bar" [class.mine]="userData.userId === currentUserId()">
-                    @for (item of getCompletedEmojis(userData.completions); track item.emoji; let i = $index) {
-                      <span class="stacked-emoji" [style.background-color]="emojiColors[i % emojiColors.length]">
-                        {{ item.emoji }}
-                        @if (item.count) {
-                          <span class="emoji-count">x{{ item.count }}</span>
-                        }
-                      </span>
+                  <!-- Emoji bars -->
+                  <div class="emoji-bars"
+                       [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'">
+                    @for (userData of selectedDateCompletions(); track userData.userId) {
+                      <div class="emoji-bar-container">
+                        <div class="emoji-bar" [class.mine]="userData.userId === currentUserId()">
+                          @for (item of getCompletedEmojis(userData.completions); track item.emoji; let i = $index) {
+                            <span class="stacked-emoji" [style.background-color]="emojiColors[i % emojiColors.length]">
+                              {{ item.emoji }}
+                            </span>
+                          }
+                        </div>
+                      </div>
                     }
                   </div>
                 </div>
-              }
+              </div>
+            </div>
+
+            <!-- Screen 1: Quran progress -->
+            <div class="screen">
+              <div class="calendar-zone">
+                <app-quran-progress
+                  [users]="users()"
+                  [animals]="animals"
+                  [currentUserId]="currentUserId()"
+                />
+              </div>
             </div>
           </div>
+        </div>
+
+        <!-- Screen dots -->
+        <div class="screen-dots">
+          <button class="dot" [class.active]="currentScreen() === 0" (click)="currentScreen.set(0)"></button>
+          <button class="dot" [class.active]="currentScreen() === 1" (click)="currentScreen.set(1)"></button>
         </div>
 
         <!-- Fixed control zone -->
@@ -99,6 +122,15 @@ import { HABITS } from '../../core/constants/habits.constants';
             (toggleHabit)="onToggleHabit($event)"
           />
         </div>
+      }
+
+      <!-- Quran modal -->
+      @if (showQuranModal()) {
+        <app-quran-modal
+          [currentPage]="currentUserQuranPage()"
+          (pageChanged)="onQuranPageChanged($event)"
+          (close)="showQuranModal.set(false)"
+        />
       }
 
       <!-- iOS install prompt -->
@@ -133,10 +165,25 @@ import { HABITS } from '../../core/constants/habits.constants';
       to { transform: rotate(360deg); }
     }
 
+    /* Swipeable screens */
+    .screens-viewport {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+    .screens-track {
+      display: flex;
+      height: 100%;
+      transition: transform 0.3s ease;
+    }
+    .screen {
+      min-width: 100%;
+      height: 100%;
+      overflow-y: auto;
+    }
+
     /* Scrollable calendar zone */
     .calendar-zone {
-      flex: 1;
-      overflow-y: auto;
       padding: 16px;
       padding-bottom: 0;
     }
@@ -270,13 +317,28 @@ import { HABITS } from '../../core/constants/habits.constants';
       border-radius: 8px;
       position: relative;
     }
-    .emoji-count {
-      position: absolute;
-      top: -2px;
-      right: -4px;
-      font-size: 8px;
-      font-weight: 600;
-      color: #1f2328;
+
+    /* Screen dots */
+    .screen-dots {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 0;
+      flex-shrink: 0;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: 1.5px solid #d0d7de;
+      background: transparent;
+      padding: 0;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .dot.active {
+      background: #2da44e;
+      border-color: #2da44e;
     }
 
     /* Fixed control zone */
@@ -309,6 +371,10 @@ export class GridComponent {
   }
   readonly today = this.dateService.getToday();
 
+  // Screen navigation (0 = habits, 1 = quran)
+  readonly currentScreen = signal(0);
+  readonly showQuranModal = signal(false);
+
   // Day navigation state
   readonly selectedDate = signal<string>(this.today);
   readonly dates = computed(() => this.dateService.getWeekForDate(this.selectedDate()));
@@ -320,8 +386,8 @@ export class GridComponent {
 
   readonly animals = ['🦥', '🐘', '🦉', '🐈', '🐜', '🐆', '🐬', '🐇', '🐫'];
 
-  // GitHub light mode colors (7 levels for 0-6 habits)
-  readonly legendColors = ['#ebedf0', '#c6e48b', '#7bc96f', '#49af5d', '#2e8b47', '#1e6823', '#155a1c'];
+  // GitHub light mode colors (6 levels for 0-5 habits)
+  readonly legendColors = ['#ebedf0', '#c6e48b', '#7bc96f', '#49af5d', '#2e8b47', '#1e6823'];
 
   // Colors for stacked emojis
   readonly emojiColors = ['#fce4ec', '#e3f2fd', '#e8f5e9', '#fff3e0', '#f3e5f5', '#e0f7fa'];
@@ -365,16 +431,17 @@ export class GridComponent {
 
   readonly canNavigateNext = computed(() => this.selectedDate() !== this.today);
 
-  getCompletedEmojis(completions: HabitCompletions): { emoji: string; count?: number }[] {
-    const result: { emoji: string; count?: number }[] = [];
+  readonly currentUserQuranPage = computed(() => {
+    const userId = this.currentUserId();
+    if (!userId) return 0;
+    const user = this.users().find(u => u.id === userId);
+    return user?.quranPage || 0;
+  });
+
+  getCompletedEmojis(completions: HabitCompletions): { emoji: string }[] {
+    const result: { emoji: string }[] = [];
     for (const habit of HABITS) {
-      const value = completions[habit.id];
-      if (habit.maxCount) {
-        const count = value as number;
-        if (count > 0) {
-          result.push({ emoji: habit.emoji, count: count > 1 ? count : undefined });
-        }
-      } else if (value) {
+      if (completions[habit.id]) {
         result.push({ emoji: habit.emoji });
       }
     }
@@ -387,24 +454,41 @@ export class GridComponent {
 
   getCellColor(userId: string, date: string): string {
     const completions = this.getCompletions(userId, date);
-    // Count boolean habits + book count (capped at 5)
     let count = 0;
     if (completions.sun) count++;
     if (completions.doubleSun) count++;
-    if (completions.book > 0) count += Math.min(completions.book, 5);
+    if (completions.book) count++;
     if (completions.three) count++;
     if (completions.network) count++;
-    return this.legendColors[Math.min(count, 6)];
+    return this.legendColors[Math.min(count, 5)];
   }
 
   async onToggleHabit(habitId: HabitId): Promise<void> {
     const userId = this.currentUserId();
     if (!userId) return;
 
+    if (habitId === 'book') {
+      this.showQuranModal.set(true);
+      return;
+    }
+
     await this.habitService.toggleHabit(
       userId,
       this.selectedDate(),
       habitId,
+      this.selectedDateUserCompletions()
+    );
+  }
+
+  async onQuranPageChanged(page: number): Promise<void> {
+    const userId = this.currentUserId();
+    if (!userId) return;
+
+    await this.habitService.updateQuranPage(userId, page);
+    // Also mark book as done for today
+    await this.habitService.markBookForToday(
+      userId,
+      this.selectedDate(),
       this.selectedDateUserCompletions()
     );
   }
@@ -428,26 +512,26 @@ export class GridComponent {
     this.selectedDate.set(this.today);
   }
 
-  // Swipe handling
-  private touchStartX = 0;
-  private touchStartY = 0;
+  // Screen swipe handling
+  private screenTouchStartX = 0;
+  private screenTouchStartY = 0;
   private readonly SWIPE_THRESHOLD = 50;
 
-  onTouchStart(event: TouchEvent): void {
-    this.touchStartX = event.touches[0].clientX;
-    this.touchStartY = event.touches[0].clientY;
+  onScreenTouchStart(event: TouchEvent): void {
+    this.screenTouchStartX = event.touches[0].clientX;
+    this.screenTouchStartY = event.touches[0].clientY;
   }
 
-  onTouchEnd(event: TouchEvent): void {
-    const deltaX = event.changedTouches[0].clientX - this.touchStartX;
-    const deltaY = event.changedTouches[0].clientY - this.touchStartY;
+  onScreenTouchEnd(event: TouchEvent): void {
+    const deltaX = event.changedTouches[0].clientX - this.screenTouchStartX;
+    const deltaY = event.changedTouches[0].clientY - this.screenTouchStartY;
 
     // Horizontal swipe only
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > this.SWIPE_THRESHOLD) {
-      if (deltaX < 0) {
-        this.navigateToPreviousDay(); // Swipe left = previous day
-      } else if (this.canNavigateNext()) {
-        this.navigateToNextDay(); // Swipe right = next day
+      if (deltaX < 0 && this.currentScreen() === 0) {
+        this.currentScreen.set(1); // Swipe left → quran screen
+      } else if (deltaX > 0 && this.currentScreen() === 1) {
+        this.currentScreen.set(0); // Swipe right → habits screen
       }
     }
   }

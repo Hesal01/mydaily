@@ -5,7 +5,7 @@ import { map } from 'rxjs/operators';
 import { HabitDay, HabitId, HabitCompletions, RawHabitCompletions, createEmptyCompletions, normalizeCompletions } from '../models/habit.model';
 import { User } from '../models/user.model';
 import { DateService } from './date.service';
-import { HABITS, getHabitConfig } from '../constants/habits.constants';
+import { HABITS } from '../constants/habits.constants';
 
 export interface DailyStat {
   habitId: HabitId;
@@ -83,17 +83,7 @@ export class HabitService {
     const docId = `${date}_${userId}`;
     const docRef = doc(this.firestore, 'habits', docId);
 
-    const habitConfig = getHabitConfig(habitId);
-    let newValue: boolean | number;
-
-    if (habitConfig?.maxCount) {
-      // Countable habit: increment and cycle
-      const currentCount = (currentCompletions[habitId] as number) || 0;
-      newValue = (currentCount + 1) % (habitConfig.maxCount + 1);
-    } else {
-      // Boolean habit: toggle
-      newValue = !currentCompletions[habitId];
-    }
+    const newValue = !currentCompletions[habitId];
 
     const newCompletions = {
       ...currentCompletions,
@@ -101,7 +91,7 @@ export class HabitService {
     };
 
     // Clear legacy doubleBook field when updating book
-    const firestoreCompletions: Record<string, boolean | number> = { ...newCompletions };
+    const firestoreCompletions: Record<string, boolean> = { ...newCompletions };
     if (habitId === 'book') {
       firestoreCompletions['doubleBook'] = false;
     }
@@ -110,6 +100,24 @@ export class HabitService {
       userId,
       date,
       completions: firestoreCompletions,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  }
+
+  async updateQuranPage(userId: string, page: number): Promise<void> {
+    const clamped = Math.max(0, Math.min(604, page));
+    const docRef = doc(this.firestore, 'users', userId);
+    await setDoc(docRef, { quranPage: clamped }, { merge: true });
+  }
+
+  async markBookForToday(userId: string, date: string, currentCompletions: HabitCompletions): Promise<void> {
+    if (currentCompletions.book) return; // already marked
+    const docId = `${date}_${userId}`;
+    const docRef = doc(this.firestore, 'habits', docId);
+    await setDoc(docRef, {
+      userId,
+      date,
+      completions: { ...currentCompletions, book: true, doubleBook: false },
       updatedAt: serverTimestamp()
     }, { merge: true });
   }
