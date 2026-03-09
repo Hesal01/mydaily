@@ -26,6 +26,15 @@ import { Component, input, output, signal } from '@angular/core';
           </select>
         </div>
 
+        <div class="select-row">
+          <label for="cycle-select">Cycle de lecture :</label>
+          <select id="cycle-select" [value]="cycle()" (change)="onCycleChange($event)">
+            @for (c of cycles; track c) {
+              <option [value]="c" [selected]="c === cycle()">{{ c === 0 ? '1re lecture' : c === 1 ? '2e lecture' : (c + 1) + 'e lecture' }}</option>
+            }
+          </select>
+        </div>
+
         <div class="modal-actions">
           <button class="btn-close" (click)="close.emit()">Fermer</button>
         </div>
@@ -127,19 +136,19 @@ import { Component, input, output, signal } from '@angular/core';
 })
 export class QuranModalComponent {
   readonly currentPage = input.required<number>();
+  readonly currentCycle = input.required<number>();
   readonly pageChanged = output<number>();
+  readonly cycleChanged = output<number>();
   readonly close = output<void>();
 
   readonly page = signal(0);
+  readonly cycle = signal(0);
   readonly pages = Array.from({ length: 604 }, (_, i) => i + 1);
-
-  constructor() {
-    // Can't use effect with input signals in constructor reliably,
-    // so we use ngOnInit pattern via signal
-  }
+  readonly cycles = Array.from({ length: 10 }, (_, i) => i);
 
   ngOnInit() {
     this.page.set(this.currentPage() || 0);
+    this.cycle.set(this.currentCycle() || 0);
   }
 
   increment(amount: number): void {
@@ -152,5 +161,11 @@ export class QuranModalComponent {
     const value = +(event.target as HTMLSelectElement).value;
     this.page.set(value);
     this.pageChanged.emit(value);
+  }
+
+  onCycleChange(event: Event): void {
+    const value = +(event.target as HTMLSelectElement).value;
+    this.cycle.set(value);
+    this.cycleChanged.emit(value);
   }
 }

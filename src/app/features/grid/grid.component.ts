@@ -128,7 +128,9 @@ import { HABITS } from '../../core/constants/habits.constants';
       @if (showQuranModal()) {
         <app-quran-modal
           [currentPage]="currentUserQuranPage()"
+          [currentCycle]="currentUserQuranCycle()"
           (pageChanged)="onQuranPageChanged($event)"
+          (cycleChanged)="onQuranCycleChanged($event)"
           (close)="showQuranModal.set(false)"
         />
       }
@@ -438,6 +440,13 @@ export class GridComponent {
     return user?.quranPage || 0;
   });
 
+  readonly currentUserQuranCycle = computed(() => {
+    const userId = this.currentUserId();
+    if (!userId) return 0;
+    const user = this.users().find(u => u.id === userId);
+    return user?.quranCycle || 0;
+  });
+
   getCompletedEmojis(completions: HabitCompletions): { emoji: string }[] {
     const result: { emoji: string }[] = [];
     for (const habit of HABITS) {
@@ -491,6 +500,13 @@ export class GridComponent {
       this.selectedDate(),
       this.selectedDateUserCompletions()
     );
+  }
+
+  async onQuranCycleChanged(cycle: number): Promise<void> {
+    const userId = this.currentUserId();
+    if (!userId) return;
+
+    await this.habitService.updateQuranCycle(userId, cycle);
   }
 
   // Day navigation methods

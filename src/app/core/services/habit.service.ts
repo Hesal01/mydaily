@@ -110,6 +110,11 @@ export class HabitService {
     await setDoc(docRef, { quranPage: clamped }, { merge: true });
   }
 
+  async updateQuranCycle(userId: string, cycle: number): Promise<void> {
+    const docRef = doc(this.firestore, 'users', userId);
+    await setDoc(docRef, { quranCycle: Math.max(0, cycle) }, { merge: true });
+  }
+
   async markBookForToday(userId: string, date: string, currentCompletions: HabitCompletions): Promise<void> {
     if (currentCompletions.book) return; // already marked
     const docId = `${date}_${userId}`;

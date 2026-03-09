@@ -12,6 +12,13 @@ import { User } from '../../../core/models/user.model';
           <div class="user-row" [class.mine]="user.id === currentUserId()">
             <span class="animal">{{ animals()[i] || '?' }}</span>
             <div class="bar-wrapper">
+              @if ((user.quranCycle || 0) > 0) {
+                <div class="cycle-dots">
+                  @for (dot of getCycleDots(user.quranCycle || 0); track dot) {
+                    <span class="cycle-dot"></span>
+                  }
+                </div>
+              }
               <div class="bar-bg">
                 <div class="bar-fill" [style.width.%]="getPercentage(user.quranPage || 0)"></div>
               </div>
@@ -62,6 +69,17 @@ import { User } from '../../../core/models/user.model';
       flex: 1;
       min-width: 0;
     }
+    .cycle-dots {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 3px;
+    }
+    .cycle-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #2da44e;
+    }
     .bar-bg {
       height: 28px;
       background: #ebedf0;
@@ -92,5 +110,9 @@ export class QuranProgressComponent {
 
   getPercentage(page: number): number {
     return Math.round((page / 604) * 100);
+  }
+
+  getCycleDots(cycle: number): number[] {
+    return Array.from({ length: cycle }, (_, i) => i);
   }
 }
