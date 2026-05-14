@@ -9,7 +9,7 @@ import { HABITS } from '../constants/habits.constants';
 
 export interface DailyStat {
   habitId: HabitId;
-  emoji: string;
+  icon: string;
   completed: number;
   total: number;
 }
@@ -91,7 +91,7 @@ export class HabitService {
     };
 
     // Clear legacy doubleBook field when updating book
-    const firestoreCompletions: Record<string, boolean> = { ...newCompletions };
+    const firestoreCompletions: Record<string, boolean | number> = { ...newCompletions };
     if (habitId === 'book') {
       firestoreCompletions['doubleBook'] = false;
     }
@@ -115,14 +115,27 @@ export class HabitService {
     await setDoc(docRef, { quranCycle: Math.max(0, cycle) }, { merge: true });
   }
 
-  async markBookForToday(userId: string, date: string, currentCompletions: HabitCompletions): Promise<void> {
-    if (currentCompletions.book) return; // already marked
+  async markBookForToday(
+    userId: string,
+    date: string,
+    currentCompletions: HabitCompletions,
+    pagesDelta: number = 0
+  ): Promise<void> {
+    const existingPages = currentCompletions.bookPages ?? 0;
+    const newPages = Math.max(0, existingPages + pagesDelta);
+    const newBook = newPages > 0;
+    if (newBook === currentCompletions.book && newPages === existingPages) return;
     const docId = `${date}_${userId}`;
     const docRef = doc(this.firestore, 'habits', docId);
     await setDoc(docRef, {
       userId,
       date,
-      completions: { ...currentCompletions, book: true, doubleBook: false },
+      completions: {
+        ...currentCompletions,
+        book: newBook,
+        doubleBook: false,
+        bookPages: newPages
+      },
       updatedAt: serverTimestamp()
     }, { merge: true });
   }
@@ -134,7 +147,7 @@ export class HabitService {
       const completed = todayHabits.filter(h => h.completions[habit.id]).length;
       return {
         habitId: habit.id,
-        emoji: habit.emoji,
+        icon: habit.icon,
         completed,
         total: totalUsers
       };

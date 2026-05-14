@@ -2,42 +2,48 @@ import { HabitId } from '../models/habit.model';
 
 export interface HabitConfig {
   id: HabitId;
-  emoji: string;
+  icon: string;
   name: string;
   description: string;
-  maxCount?: number; // For countable habits (multi-click)
+  color: string;
+  maxCount?: number;
 }
 
 export const HABITS: readonly HabitConfig[] = [
   {
     id: 'sun',
-    emoji: '☀️',
+    icon: 'sun',
     name: 'Soleil',
-    description: 'Exposition au soleil'
+    description: 'Exposition au soleil',
+    color: '#f4b942'
   },
   {
     id: 'doubleSun',
-    emoji: '☀️☀️',
+    icon: 'sun-horizon',
     name: 'Double Soleil',
-    description: 'Double exposition'
+    description: 'Double exposition',
+    color: '#e87a00'
   },
   {
     id: 'book',
-    emoji: '📖',
+    icon: 'book-open',
     name: 'Lecture',
-    description: 'Lire'
+    description: 'Lire',
+    color: '#3b82f6'
   },
   {
     id: 'three',
-    emoji: '3️⃣',
+    icon: 'number-circle-three',
     name: 'Trois',
-    description: 'Objectif 3'
+    description: 'Objectif 3',
+    color: '#a855f7'
   },
   {
     id: 'network',
-    emoji: '🌐',
+    icon: 'cell-signal-full',
     name: 'Réseau',
-    description: 'Connexion sociale'
+    description: 'Connexion sociale',
+    color: '#10b981'
   }
 ] as const;
 
@@ -46,3 +52,16 @@ export const HABIT_IDS: HabitId[] = HABITS.map(h => h.id);
 export function getHabitConfig(id: HabitId): HabitConfig | undefined {
   return HABITS.find(h => h.id === id);
 }
+
+// Animal emojis assigned per user index (kept as emoji, not Phosphor)
+export const USER_ICONS: readonly string[] = [
+  '🦥',
+  '🐘',
+  '🦉',
+  '🐈',
+  '🐜',
+  '🐆',
+  '🐬',
+  '🐇',
+  '🐫'
+];

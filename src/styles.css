@@ -1,4 +1,40 @@
 /* Global styles - GitHub light theme */
+:root {
+  --color-bg: #ffffff;
+  --color-surface-1: #f6f8fa;
+  --color-surface-2: #eaeef2;
+  --color-text: #1f2328;
+  --color-text-muted: #656d76;
+  --color-border: #d0d7de;
+  --color-border-strong: #8c959f;
+  --color-success: #2da44e;
+  --color-success-dark: #216e39;
+  --color-success-darker: #1e6823;
+  --color-success-soft: #eef9f1;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-lifted: 0 6px 24px rgba(15, 23, 42, 0.12);
+
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+
+  --emoji-color-1: #fce4ec;
+  --emoji-color-2: #e3f2fd;
+  --emoji-color-3: #e8f5e9;
+  --emoji-color-4: #fff3e0;
+  --emoji-color-5: #f3e5f5;
+  --emoji-color-6: #e0f7fa;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -8,10 +44,15 @@
 html, body {
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #ffffff;
-  color: #1f2328;
+  background: var(--color-bg);
+  color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
 }
 
 ::-webkit-scrollbar {
@@ -20,14 +61,30 @@ html, body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f6f8fa;
+  background: var(--color-surface-1);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d0d7de;
-  border-radius: 4px;
+  background: var(--color-border);
+  border-radius: var(--radius-xs);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #8c959f;
+  background: var(--color-border-strong);
+}
+
+@keyframes pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+@keyframes ring-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(45, 164, 78, 0.45); }
+  100% { box-shadow: 0 0 0 12px rgba(45, 164, 78, 0); }
+}
+
+@keyframes slide-up-fade {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }

@@ -6,6 +6,7 @@ export interface HabitCompletions {
   book: boolean;
   three: boolean;
   network: boolean;
+  bookPages?: number;
 }
 
 // Raw completions from Firestore (for backwards compatibility)
@@ -16,6 +17,7 @@ export interface RawHabitCompletions {
   doubleBook?: boolean;
   three?: boolean;
   network?: boolean;
+  bookPages?: number;
 }
 
 export interface HabitDay {
@@ -32,7 +34,8 @@ export function createEmptyCompletions(): HabitCompletions {
     doubleSun: false,
     book: false,
     three: false,
-    network: false
+    network: false,
+    bookPages: 0
   };
 }
 
@@ -54,6 +57,7 @@ export function normalizeCompletions(raw: RawHabitCompletions): HabitCompletions
     doubleSun: raw.doubleSun ?? false,
     book: bookDone,
     three: raw.three ?? false,
-    network: raw.network ?? false
+    network: raw.network ?? false,
+    bookPages: raw.bookPages ?? 0
   };
 }

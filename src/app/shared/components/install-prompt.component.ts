@@ -8,17 +8,21 @@ import { NotificationService } from '../../core/services/notification.service';
     @if (showPrompt()) {
       <div class="install-prompt">
         <div class="content">
-          <div class="icon">📲</div>
+          <i class="ph ph-device-mobile icon"></i>
           <div class="text">
             <strong>Activer les notifications</strong>
             <p>Ajoute l'app à ton écran d'accueil :</p>
             <ol>
-              <li>Appuie sur <span class="share-icon">⬆️</span> (Partager)</li>
+              <li>
+                Appuie sur <i class="ph ph-share inline-icon"></i> (Partager)
+              </li>
               <li>Choisis "Sur l'écran d'accueil"</li>
             </ol>
           </div>
         </div>
-        <button class="close-btn" (click)="dismiss()">✕</button>
+        <button class="close-btn" (click)="dismiss()" aria-label="Fermer">
+          <i class="ph ph-x"></i>
+        </button>
       </div>
     }
   `,
@@ -28,7 +32,7 @@ import { NotificationService } from '../../core/services/notification.service';
       bottom: 0;
       left: 0;
       right: 0;
-      background: #1f2328;
+      background: var(--color-text);
       color: white;
       padding: 16px;
       padding-bottom: max(16px, env(safe-area-inset-bottom));
@@ -46,6 +50,11 @@ import { NotificationService } from '../../core/services/notification.service';
     }
     .icon {
       font-size: 32px;
+      line-height: 1;
+    }
+    .inline-icon {
+      font-size: 14px;
+      vertical-align: middle;
     }
     .text {
       flex: 1;
@@ -68,14 +77,12 @@ import { NotificationService } from '../../core/services/notification.service';
     .text li {
       margin-bottom: 4px;
     }
-    .share-icon {
-      display: inline-block;
-    }
     .close-btn {
       background: transparent;
       border: none;
       color: white;
       font-size: 20px;
+      line-height: 1;
       padding: 4px 8px;
       cursor: pointer;
       opacity: 0.7;
@@ -99,7 +106,6 @@ export class InstallPromptComponent {
   }
 
   constructor() {
-    // Check if already dismissed
     if (localStorage.getItem('install-prompt-dismissed') === 'true') {
       this.dismissed.set(true);
     }

@@ -37,7 +37,7 @@ import { User } from '../../../core/models/user.model';
       font-size: 17px;
       font-weight: 600;
       text-align: center;
-      color: #1f2328;
+      color: var(--color-text);
       margin-bottom: 20px;
     }
     .users-list {
@@ -50,7 +50,7 @@ import { User } from '../../../core/models/user.model';
       align-items: center;
       gap: 8px;
       padding: 10px 0;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--color-surface-1);
       opacity: 0.65;
     }
     .user-row:last-child {
@@ -61,9 +61,14 @@ import { User } from '../../../core/models/user.model';
     }
     .animal {
       font-size: 22px;
+      line-height: 1;
       flex-shrink: 0;
       width: 30px;
       text-align: center;
+      color: var(--color-text);
+    }
+    .user-row.mine .animal {
+      color: var(--color-success-dark);
     }
     .bar-wrapper {
       flex: 1;
@@ -78,25 +83,25 @@ import { User } from '../../../core/models/user.model';
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #2da44e;
+      background: var(--color-success);
     }
     .bar-bg {
       height: 28px;
-      background: #ebedf0;
+      background: var(--color-surface-2);
       border-radius: 6px;
       overflow: hidden;
       position: relative;
     }
     .bar-fill {
       height: 100%;
-      background: #2da44e;
+      background: var(--color-success);
       border-radius: 6px;
-      transition: width 0.3s ease;
+      transition: width var(--duration-slow) var(--ease-out);
     }
     .pct {
       font-size: 12px;
       font-weight: 600;
-      color: #656d76;
+      color: var(--color-text-muted);
       flex-shrink: 0;
       min-width: 38px;
       text-align: right;
