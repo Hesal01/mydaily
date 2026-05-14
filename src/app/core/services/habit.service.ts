@@ -40,7 +40,7 @@ export class HabitService {
   }
 
   getAllHabitsRealtime(): Observable<HabitDay[]> {
-    const dates = this.dateService.getLast30Days();
+    const dates = this.dateService.getLastNDays(365);
     const startDate = dates[0];
     const endDate = dates[dates.length - 1];
 

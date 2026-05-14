@@ -4,15 +4,17 @@ import { Injectable } from '@angular/core';
 export class DateService {
 
   getLast30Days(): string[] {
+    return this.getLastNDays(30);
+  }
+
+  getLastNDays(n: number): string[] {
     const dates: string[] = [];
     const today = new Date();
-
-    for (let i = 29; i >= 0; i--) {
+    for (let i = n - 1; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(today.getDate() - i);
       dates.push(this.formatDate(date));
     }
-
     return dates;
   }
 

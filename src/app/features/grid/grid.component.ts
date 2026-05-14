@@ -5,6 +5,9 @@ import { QuranModalComponent } from './components/quran-modal.component';
 import { QuranProgressComponent } from './components/quran-progress.component';
 import { InstallPromptComponent } from '../../shared/components/install-prompt.component';
 import { ToastComponent } from '../../shared/components/toast.component';
+import { StatsPersonalComponent } from './components/stats-personal.component';
+import { StatsYearComponent } from './components/stats-year.component';
+import { StatsLeaderboardComponent } from './components/stats-leaderboard.component';
 import { AuthService } from '../../core/services/auth.service';
 import { HabitService } from '../../core/services/habit.service';
 import { DateService } from '../../core/services/date.service';
@@ -29,6 +32,9 @@ interface CompletionItem {
     QuranProgressComponent,
     InstallPromptComponent,
     ToastComponent,
+    StatsPersonalComponent,
+    StatsYearComponent,
+    StatsLeaderboardComponent,
   ],
   template: `
     <div class="container">
@@ -91,7 +97,13 @@ interface CompletionItem {
                   </div>
 
                   <div class="legend">
-                    @if (filteredHabit()) {
+                    @if (filteredHabit() === 'book') {
+                      <span>0p</span>
+                      @for (color of bookLegendShades(); track color) {
+                        <span class="legend-box" [style.background-color]="color"></span>
+                      }
+                      <span>30p+</span>
+                    } @else if (filteredHabit()) {
                       <span>Non fait</span>
                       <span class="legend-box" [style.background]="'#ebedf0'"></span>
                       <span class="legend-box" [style.background]="filteredHabitColor()"></span>
@@ -155,22 +167,50 @@ interface CompletionItem {
                 />
               </div>
             </div>
+
+            <!-- Screen 2: Personal stats -->
+            <div class="screen">
+              <app-stats-personal
+                [habits]="habits$()"
+                [currentUser]="currentUserObj()"
+              />
+            </div>
+
+            <!-- Screen 3: Year heatmap -->
+            <div class="screen">
+              <app-stats-year
+                [habits$]="habits$()"
+                [currentUser]="currentUserObj()"
+              />
+            </div>
+
+            <!-- Screen 4: Leaderboard -->
+            <div class="screen">
+              <app-stats-leaderboard
+                [habits$]="habits$()"
+                [users]="users()"
+                [currentUserId]="currentUserId()"
+              />
+            </div>
           </div>
         </div>
 
         <div class="screen-dots">
-          <button class="dot" [class.active]="currentScreen() === 0" (click)="currentScreen.set(0)" aria-label="Habitudes"></button>
-          <button class="dot" [class.active]="currentScreen() === 1" (click)="currentScreen.set(1)" aria-label="Quran"></button>
+          @for (i of screenIndices; track i) {
+            <button class="dot" [class.active]="currentScreen() === i" (click)="setScreen(i)" [attr.aria-label]="screenLabels[i]"></button>
+          }
         </div>
 
-        <div class="control-zone">
-          <app-habit-buttons
-            [completions]="selectedDateUserCompletions()"
-            [canEdit]="canEdit()"
-            [infoDate]="selectedDateShort()"
-            (toggleHabit)="onToggleHabit($event)"
-          />
-        </div>
+        @if (currentScreen() === 0) {
+          <div class="control-zone">
+            <app-habit-buttons
+              [completions]="selectedDateUserCompletions()"
+              [canEdit]="canEdit()"
+              [infoDate]="selectedDateShort()"
+              (toggleHabit)="onToggleHabit($event)"
+            />
+          </div>
+        }
       }
 
       @if (showQuranModal()) {
@@ -378,37 +418,49 @@ interface CompletionItem {
     .icon-matrix {
       display: grid;
       margin: 8px 0 16px;
-      border-top: 1px solid var(--color-border);
-      border-left: 1px solid var(--color-border);
+      border: 1px solid var(--color-border);
       border-radius: var(--radius-sm);
       overflow: hidden;
       background: var(--color-bg);
+      width: 100%;
+      min-width: 0;
     }
     .mtx-cell {
       min-height: 30px;
+      min-width: 0;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 3px;
+      gap: 1px;
       border-right: 1px solid var(--color-border);
       border-bottom: 1px solid var(--color-border);
-      padding: 4px 2px;
+      padding: 3px 1px;
+      overflow: hidden;
       transition: background var(--duration-base) ease;
     }
     .mtx-cell.col-last { border-right: none; }
     .mtx-cell.row-last { border-bottom: none; }
-    .mtx-cell.mine { background: color-mix(in srgb, var(--color-success) 6%, transparent); }
-    .mtx-cell.done.mine { background: color-mix(in srgb, var(--habit-color) 10%, transparent); }
+    .mtx-cell.mine:not(.done) { background: color-mix(in srgb, var(--color-success) 6%, transparent); }
+    .mtx-cell.done { background: color-mix(in srgb, var(--habit-color) 20%, white); }
+    .mtx-cell.done.mine { background: color-mix(in srgb, var(--habit-color) 32%, white); }
     .mtx-ic {
       font-size: 16px;
       line-height: 1;
-      color: var(--habit-color);
+      color: color-mix(in srgb, var(--habit-color) 78%, black);
+      flex-shrink: 0;
     }
     .mtx-count {
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 700;
-      color: var(--habit-color);
+      color: color-mix(in srgb, var(--habit-color) 75%, black);
       line-height: 1;
+    }
+
+    @media (max-width: 360px) {
+      .mtx-ic { font-size: 13px; }
+      .mtx-count { font-size: 8px; }
+      .mtx-cell { min-height: 26px; padding: 2px 1px; }
     }
 
     .screen-dots {
@@ -460,7 +512,15 @@ export class GridComponent {
   readonly filteredHabit = signal<HabitId | null>(null);
 
   readonly currentScreen = signal(0);
+  readonly screenIndices = [0, 1, 2, 3, 4];
+  readonly screenLabels = ['Habitudes', 'Coran', 'Aperçu', 'Année', 'Classement'];
   readonly showQuranModal = signal(false);
+
+  readonly currentUserObj = computed(() => {
+    const id = this.currentUserId();
+    if (!id) return null;
+    return this.users().find(u => u.id === id) ?? null;
+  });
   readonly selectedDate = signal<string>(this.today);
   readonly dates = computed(() => this.dateService.getWeekForDate(this.selectedDate()));
 
@@ -577,6 +637,10 @@ export class GridComponent {
       if (c.network) count++;
       return this.legendColors[Math.min(count, 5)];
     }
+    if (h === 'book') {
+      const pages = this.getMergedCompletions(userId, date).bookPages ?? 0;
+      return this.bookIntensityColor(pages);
+    }
     const done = !!this.getMergedCompletions(userId, date)[h];
     if (!done) return this.legendColors[0];
     return getHabitConfig(h)?.color ?? this.legendColors[5];
@@ -587,6 +651,28 @@ export class GridComponent {
     if (!h) return this.legendColors[5];
     return getHabitConfig(h)?.color ?? this.legendColors[5];
   }
+
+  bookIntensityColor(pages: number): string {
+    const book = getHabitConfig('book')?.color ?? '#3b82f6';
+    if (pages === 0) return this.legendColors[0];
+    if (pages <= 2) return `color-mix(in srgb, ${book} 25%, white)`;
+    if (pages <= 6) return `color-mix(in srgb, ${book} 45%, white)`;
+    if (pages <= 14) return `color-mix(in srgb, ${book} 65%, white)`;
+    if (pages <= 29) return `color-mix(in srgb, ${book} 85%, white)`;
+    return book;
+  }
+
+  readonly bookLegendShades = computed(() => {
+    const book = getHabitConfig('book')?.color ?? '#3b82f6';
+    return [
+      this.legendColors[0],
+      `color-mix(in srgb, ${book} 25%, white)`,
+      `color-mix(in srgb, ${book} 45%, white)`,
+      `color-mix(in srgb, ${book} 65%, white)`,
+      `color-mix(in srgb, ${book} 85%, white)`,
+      book,
+    ];
+  });
 
   iconBgFor(color: string): string {
     return `color-mix(in srgb, ${color} 18%, white)`;
@@ -713,12 +799,19 @@ export class GridComponent {
     const deltaX = event.changedTouches[0].clientX - this.screenTouchStartX;
     const deltaY = event.changedTouches[0].clientY - this.screenTouchStartY;
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > this.SWIPE_THRESHOLD) {
-      if (deltaX < 0 && this.currentScreen() === 0) {
-        this.currentScreen.set(1);
-      } else if (deltaX > 0 && this.currentScreen() === 1) {
-        this.currentScreen.set(0);
+      const current = this.currentScreen();
+      if (deltaX < 0 && current < this.screenIndices.length - 1) {
+        this.setScreen(current + 1);
+      } else if (deltaX > 0 && current > 0) {
+        this.setScreen(current - 1);
       }
     }
+  }
+
+  setScreen(i: number): void {
+    if (this.currentScreen() === i) return;
+    this.hapticService.tap();
+    this.currentScreen.set(i);
   }
 
   getMergedCompletions(userId: string, date: string): HabitCompletions {
