@@ -252,7 +252,7 @@ interface CompletionItem {
         />
       }
 
-      <app-celebration-overlay [bursts]="celebrations()" />
+      <app-celebration-overlay [bursts]="celebrations()" [toast]="congratsMessage()" />
       <app-toast />
       <app-install-prompt />
     </div>
@@ -963,6 +963,8 @@ export class GridComponent implements OnDestroy {
 
   readonly pressingCell = signal<{ userId: string; date: string } | null>(null);
   readonly celebrations = signal<CelebrationBurst[]>([]);
+  readonly congratsMessage = signal<string | null>(null);
+  private congratsMsgTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Congratulations received per user today (drives the badges).
   readonly congratsCounts = computed<Record<string, number>>(() => {
@@ -1034,7 +1036,7 @@ export class GridComponent implements OnDestroy {
 
     this.hapticService.success();
     this.spawnBurstAtCell(target.userId, target.date);
-    this.toastService.show(`Bravo envoyé à ${this.animalFor(target.userId)} 👏`);
+    this.showCongratsMessage(`Bravo envoyé à ${this.animalFor(target.userId)} ! 👏`);
 
     try {
       await this.congratsService.sendCongrats(from, target.userId, target.date);
@@ -1046,7 +1048,7 @@ export class GridComponent implements OnDestroy {
   private celebrateForReceiver(c: Congrats): void {
     this.hapticService.success();
     this.spawnBurstAtCell(c.to, c.date);
-    this.toastService.show(`${this.animalFor(c.from)} t'a félicité 👏`);
+    this.showCongratsMessage(`${this.animalFor(c.from)} t'a félicité ! 👏`);
   }
 
   private spawnBurstAtCell(userId: string, date: string): void {
@@ -1097,5 +1099,12 @@ export class GridComponent implements OnDestroy {
 
   private animalFor(userId: string): string {
     return this.animalsByUserId()[userId] || '🐾';
+  }
+
+  private showCongratsMessage(text: string): void {
+    this.congratsMessage.set(text);
+    if (this.congratsMsgTimer) clearTimeout(this.congratsMsgTimer);
+    // Stays ~4s (CSS fades out at 3.9s); clear after the fade completes.
+    this.congratsMsgTimer = setTimeout(() => this.congratsMessage.set(null), 4400);
   }
 }

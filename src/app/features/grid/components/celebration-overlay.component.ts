@@ -130,29 +130,31 @@ export interface CelebrationBurst {
     }
     .toast {
       position: fixed;
-      top: 18px;
+      top: 84px;
       left: 50%;
       transform: translateX(-50%);
-      max-width: 88vw;
-      background: rgba(31, 35, 40, 0.96);
+      max-width: 92vw;
+      background: rgba(31, 35, 40, 0.97);
       color: #ffffff;
-      padding: 10px 18px;
+      padding: 16px 26px;
       border-radius: 999px;
-      font-size: 14px;
-      font-weight: 600;
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      text-align: center;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-      animation: toast-in 0.3s ease-out, toast-out 0.4s ease-in 2.2s forwards;
+      box-shadow: 0 14px 38px rgba(0, 0, 0, 0.34), 0 0 0 2px rgba(245, 183, 0, 0.65);
+      animation: toast-in 0.42s cubic-bezier(0.34, 1.56, 0.64, 1), toast-out 0.45s ease-in 3.9s forwards;
     }
     @keyframes toast-in {
-      0% { transform: translate(-50%, -24px); opacity: 0; }
-      100% { transform: translate(-50%, 0); opacity: 1; }
+      0% { transform: translate(-50%, -30px) scale(0.8); opacity: 0; }
+      100% { transform: translate(-50%, 0) scale(1); opacity: 1; }
     }
     @keyframes toast-out {
-      0% { transform: translate(-50%, 0); opacity: 1; }
-      100% { transform: translate(-50%, -24px); opacity: 0; }
+      0% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+      100% { transform: translate(-50%, -18px) scale(0.95); opacity: 0; }
     }
   `]
 })
