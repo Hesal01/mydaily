@@ -8,9 +8,9 @@ import { User } from '../../../core/models/user.model';
     <div class="quran-progress">
       <div class="title">Progression lecture</div>
       <div class="users-list">
-        @for (user of users(); track user.id; let i = $index) {
+        @for (user of users(); track user.id) {
           <div class="user-row" [class.mine]="user.id === currentUserId()">
-            <span class="animal">{{ animals()[i] || '?' }}</span>
+            <span class="animal">{{ animalsByUserId()[user.id] || '?' }}</span>
             <div class="bar-wrapper">
               @if ((user.quranCycle || 0) > 0) {
                 <div class="cycle-dots">
@@ -110,7 +110,7 @@ import { User } from '../../../core/models/user.model';
 })
 export class QuranProgressComponent {
   readonly users = input.required<User[]>();
-  readonly animals = input.required<string[]>();
+  readonly animalsByUserId = input.required<Record<string, string>>();
   readonly currentUserId = input.required<string | null>();
 
   getPercentage(page: number): number {

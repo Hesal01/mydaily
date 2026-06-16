@@ -1,4 +1,4 @@
-import { Component, inject, computed, effect, signal } from '@angular/core';
+import { Component, inject, computed, effect, signal, OnDestroy } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { HabitButtonsComponent } from './components/habit-buttons.component';
 import { QuranModalComponent } from './components/quran-modal.component';
@@ -8,12 +8,14 @@ import { ToastComponent } from '../../shared/components/toast.component';
 import { StatsPersonalComponent } from './components/stats-personal.component';
 import { StatsYearComponent } from './components/stats-year.component';
 import { StatsLeaderboardComponent } from './components/stats-leaderboard.component';
+import { SettingsComponent } from './components/settings.component';
 import { AuthService } from '../../core/services/auth.service';
 import { HabitService } from '../../core/services/habit.service';
 import { DateService } from '../../core/services/date.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { HapticService } from '../../core/services/haptic.service';
 import { ToastService } from '../../core/services/toast.service';
+import { CamelWatcherService } from '../../core/services/camel-watcher.service';
 import { HabitId, HabitCompletions, createEmptyCompletions } from '../../core/models/habit.model';
 import { HABITS, USER_ICONS, getHabitConfig } from '../../core/constants/habits.constants';
 
@@ -35,6 +37,7 @@ interface CompletionItem {
     StatsPersonalComponent,
     StatsYearComponent,
     StatsLeaderboardComponent,
+    SettingsComponent,
   ],
   template: `
     <div class="container">
@@ -73,18 +76,18 @@ interface CompletionItem {
                   </div>
 
                   <!-- Animals row (below filters) -->
-                  <div class="animal-header" [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'">
-                    @for (user of users(); track user.id; let i = $index) {
+                  <div class="animal-header" [style.grid-template-columns]="'repeat(' + visibleUsers().length + ', 1fr)'">
+                    @for (user of visibleUsers(); track user.id) {
                       <div class="animal" [class.mine]="user.id === currentUserId()">
-                        {{ animals[i] || '?' }}
+                        {{ animalsByUserId()[user.id] || '?' }}
                       </div>
                     }
                   </div>
 
                   <!-- Grid -->
-                  <div class="grid" [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'">
+                  <div class="grid" [style.grid-template-columns]="'repeat(' + visibleUsers().length + ', 1fr)'">
                     @for (date of dates(); track date) {
-                      @for (user of users(); track user.id) {
+                      @for (user of visibleUsers(); track user.id) {
                         <div
                           class="cell"
                           [class.mine]="user.id === currentUserId()"
@@ -132,7 +135,7 @@ interface CompletionItem {
                     </button>
                   </div>
 
-                  <div class="icon-matrix" [style.grid-template-columns]="'repeat(' + users().length + ', 1fr)'">
+                  <div class="icon-matrix" [style.grid-template-columns]="'repeat(' + visibleUsers().length + ', 1fr)'">
                     @for (habit of habits; track habit.id; let hLast = $last) {
                       @for (userData of selectedDateCompletions(); track userData.userId; let cLast = $last) {
                         <div
@@ -161,8 +164,8 @@ interface CompletionItem {
             <div class="screen">
               <div class="calendar-zone">
                 <app-quran-progress
-                  [users]="users()"
-                  [animals]="animalsArray"
+                  [users]="visibleUsers()"
+                  [animalsByUserId]="animalsByUserId()"
                   [currentUserId]="currentUserId()"
                 />
               </div>
@@ -188,8 +191,18 @@ interface CompletionItem {
             <div class="screen">
               <app-stats-leaderboard
                 [habits$]="habits$()"
-                [users]="users()"
+                [users]="visibleUsers()"
+                [animalsByUserId]="animalsByUserId()"
                 [currentUserId]="currentUserId()"
+              />
+            </div>
+
+            <!-- Screen 5: Settings -->
+            <div class="screen">
+              <app-settings
+                [currentUser]="currentUserObj()"
+                [visibleUsersCount]="visibleUsers().length"
+                [totalUsersCount]="users().length"
               />
             </div>
           </div>
@@ -495,25 +508,23 @@ interface CompletionItem {
     }
   `]
 })
-export class GridComponent {
+export class GridComponent implements OnDestroy {
   private authService = inject(AuthService);
   private habitService = inject(HabitService);
   private dateService = inject(DateService);
   private notificationService = inject(NotificationService);
   private hapticService = inject(HapticService);
   private toastService = inject(ToastService);
+  private camelWatcher = inject(CamelWatcherService);
 
   readonly currentUserId = this.authService.userId;
   readonly today = this.dateService.getToday();
   readonly habits = HABITS;
-  readonly animals = USER_ICONS;
-  readonly animalsArray = [...USER_ICONS];
-
   readonly filteredHabit = signal<HabitId | null>(null);
 
   readonly currentScreen = signal(0);
-  readonly screenIndices = [0, 1, 2, 3, 4];
-  readonly screenLabels = ['Habitudes', 'Coran', 'Aperçu', 'Année', 'Classement'];
+  readonly screenIndices = [0, 1, 2, 3, 4, 5];
+  readonly screenLabels = ['Habitudes', 'Coran', 'Aperçu', 'Année', 'Classement', 'Paramètres'];
   readonly showQuranModal = signal(false);
 
   readonly currentUserObj = computed(() => {
@@ -526,6 +537,22 @@ export class GridComponent {
 
   readonly users = toSignal(this.habitService.getAllUsers(), { initialValue: [] });
   readonly habits$ = toSignal(this.habitService.getAllHabitsRealtime(), { initialValue: [] });
+
+  readonly visibleUsers = computed(() => {
+    const all = this.users();
+    const meId = this.currentUserId();
+    const me = all.find(u => u.id === meId);
+    if (me?.privacyMode) return [me];
+    return all.filter(u => u.id === meId || !u.privacyMode);
+  });
+
+  readonly animalsByUserId = computed(() => {
+    const map: Record<string, string> = {};
+    this.users().forEach((u, i) => {
+      map[u.id] = USER_ICONS[i] ?? '?';
+    });
+    return map;
+  });
 
   private readonly optimisticOverlay = signal<Record<string, HabitCompletions>>({});
   private readonly writtenQuranPage = signal<number | null>(null);
@@ -543,7 +570,7 @@ export class GridComponent {
   });
 
   readonly selectedDateCompletions = computed(() => {
-    return this.users().map(user => ({
+    return this.visibleUsers().map(user => ({
       userId: user.id,
       completions: this.getMergedCompletions(user.id, this.selectedDate())
     }));
@@ -580,6 +607,8 @@ export class GridComponent {
   });
 
   constructor() {
+    this.camelWatcher.start();
+
     effect(() => {
       const userId = this.currentUserId();
       if (userId) {
@@ -618,6 +647,10 @@ export class GridComponent {
         this.writtenQuranPage.set(null);
       }
     }, { allowSignalWrites: true });
+  }
+
+  ngOnDestroy(): void {
+    this.camelWatcher.stop();
   }
 
   setFilter(habitId: HabitId | null): void {

@@ -1,5 +1,5 @@
 import { Component, input, signal, computed, inject } from '@angular/core';
-import { HABITS, USER_ICONS } from '../../../core/constants/habits.constants';
+import { HABITS } from '../../../core/constants/habits.constants';
 import { HabitDay, HabitId } from '../../../core/models/habit.model';
 import { User } from '../../../core/models/user.model';
 import { HabitStatsService, LeaderRow } from '../../../core/services/habit-stats.service';
@@ -211,6 +211,7 @@ export class StatsLeaderboardComponent {
 
   readonly habits$ = input.required<HabitDay[]>();
   readonly users = input.required<User[]>();
+  readonly animalsByUserId = input.required<Record<string, string>>();
   readonly currentUserId = input.required<string | null>();
 
   readonly habits = HABITS;
@@ -254,8 +255,7 @@ export class StatsLeaderboardComponent {
   }
 
   animalFor(userId: string): string {
-    const idx = this.users().findIndex(u => u.id === userId);
-    return USER_ICONS[idx] ?? '?';
+    return this.animalsByUserId()[userId] ?? '?';
   }
 
   barColor(): string {

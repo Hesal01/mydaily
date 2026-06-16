@@ -1,5 +1,5 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
-import { Firestore, collection, query, where, getDocs } from '@angular/fire/firestore';
+import { Firestore, collection, query, where, getDocs, doc, setDoc, serverTimestamp } from '@angular/fire/firestore';
 import { SharedStorageService } from './shared-storage.service';
 
 @Injectable({ providedIn: 'root' })
@@ -51,6 +51,11 @@ export class AuthService {
 
       const userDoc = snapshot.docs[0];
       const userId = userDoc.id;
+
+      if (userId === 'user_9' && !userDoc.data()['firstConnectedAt']) {
+        const userRef = doc(this.firestore, 'users', userId);
+        await setDoc(userRef, { firstConnectedAt: serverTimestamp() }, { merge: true });
+      }
 
       this.currentUserId.set(userId);
       await this.sharedStorage.set('mydaily_userId', userId);

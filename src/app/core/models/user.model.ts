@@ -4,5 +4,7 @@ export interface User {
   displayOrder: number;
   quranPage?: number;
   quranCycle?: number;
+  privacyMode?: boolean;
   createdAt?: Date;
+  firstConnectedAt?: Date;
 }
