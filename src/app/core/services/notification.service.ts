@@ -148,6 +148,12 @@ export class NotificationService {
       onMessage(messaging, (payload) => {
         console.log('Foreground message received:', payload);
 
+        // Congrats are celebrated in-app via the Firestore listener (live
+        // confetti). Skip the redundant system banner when the app is open.
+        if (payload.data && payload.data['type'] === 'congrats') {
+          return;
+        }
+
         if (payload.notification) {
           new Notification(payload.notification.title || 'MyDaily', {
             body: payload.notification.body,

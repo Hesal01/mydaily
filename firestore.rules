@@ -14,5 +14,12 @@ service cloud.firestore {
       allow create, update: if true;
       allow delete: if false;
     }
+
+    // Congratulations collection - ouvert (sécurité via token côté client)
+    match /congratulations/{congratsId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if false;
+    }
   }
 }

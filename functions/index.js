@@ -163,3 +163,56 @@ exports.processNotificationQueue = functions.pubsub
 
     return null;
   });
+
+/**
+ * Triggered when a congratulation is created.
+ * Sends a push notification to the recipient only (1 -> 1, no multicast).
+ * The deterministic doc id ({date}_{to}_{from}) means re-pressing the same
+ * day does not re-create the doc, so onCreate never re-fires -> no spam.
+ */
+exports.onCongratsCreate = functions.firestore
+  .document('congratulations/{congratsId}')
+  .onCreate(async (snap, context) => {
+    const data = snap.data() || {};
+    const from = data.from;
+    const to = data.to;
+    const emoji = data.emoji || '👏';
+
+    if (!from || !to) {
+      console.log('Congrats missing from/to, skipping');
+      return null;
+    }
+
+    // Get the recipient's FCM token only
+    const toDoc = await db.collection('users').doc(to).get();
+    const token = toDoc.exists ? toDoc.data().fcmToken : null;
+
+    if (!token) {
+      console.log('No FCM token for recipient', to);
+      return null;
+    }
+
+    const fromIndex = parseInt(String(from).replace('user_', ''), 10) - 1;
+    const fromAnimal = ANIMALS[fromIndex] || '🐾';
+
+    const message = {
+      notification: {
+        title: `${fromAnimal} t'a félicité ! ${emoji}`,
+        body: 'Bravo pour ta journée 💪'
+      },
+      data: {
+        type: 'congrats',
+        fromUser: String(from)
+      },
+      token: token
+    };
+
+    try {
+      await messaging.send(message);
+      console.log(`Congrats notification sent to ${to} from ${from}`);
+    } catch (error) {
+      console.error('Error sending congrats notification:', error);
+    }
+
+    return null;
+  });

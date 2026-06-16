@@ -16,8 +16,11 @@ import { NotificationService } from '../../core/services/notification.service';
 import { HapticService } from '../../core/services/haptic.service';
 import { ToastService } from '../../core/services/toast.service';
 import { CamelWatcherService } from '../../core/services/camel-watcher.service';
+import { CongratsService } from '../../core/services/congrats.service';
 import { HabitId, HabitCompletions, createEmptyCompletions } from '../../core/models/habit.model';
+import { Congrats } from '../../core/models/congrats.model';
 import { HABITS, USER_ICONS, getHabitConfig } from '../../core/constants/habits.constants';
+import { CelebrationOverlayComponent, CelebrationBurst, CelebrationParticle } from './components/celebration-overlay.component';
 
 interface CompletionItem {
   icon: string;
@@ -38,6 +41,7 @@ interface CompletionItem {
     StatsYearComponent,
     StatsLeaderboardComponent,
     SettingsComponent,
+    CelebrationOverlayComponent,
   ],
   template: `
     <div class="container">
@@ -90,11 +94,23 @@ interface CompletionItem {
                       @for (user of visibleUsers(); track user.id) {
                         <div
                           class="cell"
+                          [attr.data-cell]="user.id + '_' + date"
                           [class.mine]="user.id === currentUserId()"
                           [class.today]="date === today"
                           [class.selected]="date === selectedDate()"
+                          [class.congratulable]="canCongratulate(user.id, date)"
+                          [class.pressing]="isPressingCell(user.id, date)"
                           [style.background-color]="cellColor(user.id, date)"
-                        ></div>
+                          (pointerdown)="onCellPointerDown($event, user.id, date)"
+                          (pointermove)="onCellPointerMove($event)"
+                          (pointerup)="onCellPointerUp()"
+                          (pointercancel)="onCellPointerUp()"
+                          (contextmenu)="$event.preventDefault()"
+                        >
+                          @if (date === today && congratsCounts()[user.id]) {
+                            <span class="cell-badge">{{ congratsCounts()[user.id] }}</span>
+                          }
+                        </div>
                       }
                     }
                   </div>
@@ -236,6 +252,7 @@ interface CompletionItem {
         />
       }
 
+      <app-celebration-overlay [bursts]="celebrations()" />
       <app-toast />
       <app-install-prompt />
     </div>
@@ -351,11 +368,50 @@ interface CompletionItem {
     .cell {
       aspect-ratio: 1;
       border-radius: var(--radius-xs);
-      transition: background-color var(--duration-base) ease;
+      position: relative;
+      transition: background-color var(--duration-base) ease, transform 0.15s ease;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
     .cell.mine { filter: brightness(0.92); }
     .cell.selected { box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.4); }
     .cell.today { outline: 1px solid var(--color-success-darker); outline-offset: -1px; }
+    .cell.congratulable {
+      cursor: pointer;
+      /* Claim the touch so iOS Safari doesn't hijack the long-press. */
+      touch-action: none;
+    }
+    .cell.pressing {
+      transform: scale(1.35);
+      z-index: 5;
+      animation: cell-charging 0.5s ease-out forwards;
+    }
+    @keyframes cell-charging {
+      0% { box-shadow: 0 0 0 0 rgba(245, 183, 0, 0.7); }
+      100% { box-shadow: 0 0 0 7px rgba(245, 183, 0, 0), 0 0 14px 4px rgba(245, 183, 0, 0.95); }
+    }
+    .cell-badge {
+      position: absolute;
+      top: 1px;
+      right: 1px;
+      min-width: 11px;
+      height: 11px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 2px;
+      font-size: 8px;
+      font-weight: 800;
+      line-height: 1;
+      color: #ffffff;
+      background: #f5b700;
+      border-radius: 999px;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9);
+      pointer-events: none;
+      z-index: 3;
+    }
 
     .legend {
       display: flex;
@@ -516,6 +572,7 @@ export class GridComponent implements OnDestroy {
   private hapticService = inject(HapticService);
   private toastService = inject(ToastService);
   private camelWatcher = inject(CamelWatcherService);
+  private congratsService = inject(CongratsService);
 
   readonly currentUserId = this.authService.userId;
   readonly today = this.dateService.getToday();
@@ -537,6 +594,7 @@ export class GridComponent implements OnDestroy {
 
   readonly users = toSignal(this.habitService.getAllUsers(), { initialValue: [] });
   readonly habits$ = toSignal(this.habitService.getAllHabitsRealtime(), { initialValue: [] });
+  readonly todayCongrats = toSignal(this.congratsService.getCongratsForDate(this.today), { initialValue: [] as Congrats[] });
 
   readonly visibleUsers = computed(() => {
     const all = this.users();
@@ -615,6 +673,21 @@ export class GridComponent implements OnDestroy {
         this.notificationService.requestPermissionAndSaveToken(userId);
         this.notificationService.listenForMessages();
       }
+    }, { allowSignalWrites: true });
+
+    // Celebrate incoming congratulations live (and replay missed ones on open).
+    effect(() => {
+      const me = this.currentUserId();
+      const list = this.todayCongrats();
+      if (!me) return;
+      const incoming = list.filter(c => c.to === me && !c.seen && !this.animatedCongrats.has(c.id));
+      incoming.forEach((c, i) => {
+        this.animatedCongrats.add(c.id);
+        setTimeout(() => {
+          this.celebrateForReceiver(c);
+          this.congratsService.markSeen(c.id);
+        }, i * 450);
+      });
     }, { allowSignalWrites: true });
 
     effect(() => {
@@ -875,5 +948,154 @@ export class GridComponent implements OnDestroy {
       && a.three === b.three
       && a.network === b.network
       && (a.bookPages ?? 0) === (b.bookPages ?? 0);
+  }
+
+  // ===== Congratulations: long-press gesture + celebration =====
+
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  private longPressTarget: { userId: string; date: string } | null = null;
+  private pressStartX = 0;
+  private pressStartY = 0;
+  private burstSeq = 0;
+  private readonly animatedCongrats = new Set<string>();
+  private readonly LONG_PRESS_MS = 500;
+  private readonly MOVE_CANCEL_PX = 12;
+
+  readonly pressingCell = signal<{ userId: string; date: string } | null>(null);
+  readonly celebrations = signal<CelebrationBurst[]>([]);
+
+  // Congratulations received per user today (drives the badges).
+  readonly congratsCounts = computed<Record<string, number>>(() => {
+    const counts: Record<string, number> = {};
+    for (const c of this.todayCongrats()) {
+      counts[c.to] = (counts[c.to] || 0) + 1;
+    }
+    return counts;
+  });
+
+  private hasAnyCompletion(userId: string, date: string): boolean {
+    const c = this.getMergedCompletions(userId, date);
+    return c.sun || c.doubleSun || c.book || c.three || c.network;
+  }
+
+  // Only today's cells, belonging to someone else, with at least one habit done.
+  canCongratulate(userId: string, date: string): boolean {
+    if (date !== this.today) return false;
+    if (userId === this.currentUserId()) return false;
+    return this.hasAnyCompletion(userId, date);
+  }
+
+  isPressingCell(userId: string, date: string): boolean {
+    const p = this.pressingCell();
+    return p !== null && p.userId === userId && p.date === date;
+  }
+
+  onCellPointerDown(event: PointerEvent, userId: string, date: string): void {
+    if (!this.canCongratulate(userId, date)) return;
+    this.pressStartX = event.clientX;
+    this.pressStartY = event.clientY;
+    this.longPressTarget = { userId, date };
+    this.pressingCell.set({ userId, date });
+    this.hapticService.tap();
+    this.longPressTimer = setTimeout(() => this.completeLongPress(), this.LONG_PRESS_MS);
+  }
+
+  onCellPointerMove(event: PointerEvent): void {
+    if (!this.longPressTimer) return;
+    const dx = Math.abs(event.clientX - this.pressStartX);
+    const dy = Math.abs(event.clientY - this.pressStartY);
+    if (dx > this.MOVE_CANCEL_PX || dy > this.MOVE_CANCEL_PX) {
+      this.cancelLongPress();
+    }
+  }
+
+  onCellPointerUp(): void {
+    this.cancelLongPress();
+  }
+
+  private cancelLongPress(): void {
+    if (this.longPressTimer) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+    this.longPressTarget = null;
+    this.pressingCell.set(null);
+  }
+
+  private async completeLongPress(): Promise<void> {
+    this.longPressTimer = null;
+    const target = this.longPressTarget;
+    this.longPressTarget = null;
+    this.pressingCell.set(null);
+    if (!target) return;
+
+    const from = this.currentUserId();
+    if (!from) return;
+
+    this.hapticService.success();
+    this.spawnBurstAtCell(target.userId, target.date);
+    this.toastService.show(`Bravo envoyé à ${this.animalFor(target.userId)} 👏`);
+
+    try {
+      await this.congratsService.sendCongrats(from, target.userId, target.date);
+    } catch (error) {
+      console.error('Failed to send congrats:', error);
+    }
+  }
+
+  private celebrateForReceiver(c: Congrats): void {
+    this.hapticService.success();
+    this.spawnBurstAtCell(c.to, c.date);
+    this.toastService.show(`${this.animalFor(c.from)} t'a félicité 👏`);
+  }
+
+  private spawnBurstAtCell(userId: string, date: string): void {
+    const center = this.cellCenter(userId, date) ?? {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 3
+    };
+    const id = ++this.burstSeq;
+    this.celebrations.update(list => [...list, { id, x: center.x, y: center.y, particles: this.makeParticles() }]);
+    setTimeout(() => {
+      this.celebrations.update(list => list.filter(b => b.id !== id));
+    }, 1100);
+  }
+
+  private cellCenter(userId: string, date: string): { x: number; y: number } | null {
+    if (typeof document === 'undefined') return null;
+    const el = document.querySelector(`[data-cell="${userId}_${date}"]`) as HTMLElement | null;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    // Off-screen (other swipe screen / non-visible week) -> caller falls back to centre.
+    if (x < 0 || x > window.innerWidth || y < 0 || y > window.innerHeight) return null;
+    return { x, y };
+  }
+
+  private makeParticles(): CelebrationParticle[] {
+    const colors = ['#f5b700', '#ff5470', '#2da44e', '#3b82f6', '#a855f7', '#ffd60a'];
+    const emojis = ['✨', '🎉', '👏'];
+    const particles: CelebrationParticle[] = [];
+    const count = 20;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.6;
+      const dist = 55 + Math.random() * 75;
+      const isEmoji = i % 5 === 0;
+      particles.push({
+        tx: `${Math.round(Math.cos(angle) * dist)}px`,
+        ty: `${Math.round(Math.sin(angle) * dist - 25)}px`,
+        rot: `${Math.round((Math.random() - 0.5) * 720)}deg`,
+        color: colors[i % colors.length],
+        isEmoji,
+        char: emojis[i % emojis.length],
+        delay: Math.round(Math.random() * 90)
+      });
+    }
+    return particles;
+  }
+
+  private animalFor(userId: string): string {
+    return this.animalsByUserId()[userId] || '🐾';
   }
 }
