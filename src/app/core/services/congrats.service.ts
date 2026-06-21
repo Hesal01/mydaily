@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, query, where, onSnapshot, doc, setDoc, serverTimestamp } from '@angular/fire/firestore';
+import { Firestore, collection, query, where, onSnapshot, doc, setDoc, serverTimestamp, increment } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
 import { Congrats } from '../models/congrats.model';
 
@@ -8,8 +8,10 @@ export class CongratsService {
   private firestore = inject(Firestore);
 
   /**
-   * Send a congratulation. The deterministic doc id guarantees
-   * one congratulation per sender -> recipient per day (no spam).
+   * Send a congratulation. The deterministic doc id keeps a single doc per
+   * sender -> recipient per day, so the badge counter never inflates on spam.
+   * Each send bumps `count` and clears `seen`, which lets the recipient replay
+   * the celebration live for every clap (spam) without a new counted doc.
    */
   sendCongrats(from: string, to: string, date: string, emoji = '👏'): Promise<void> {
     const docId = `${date}_${to}_${from}`;
@@ -20,7 +22,9 @@ export class CongratsService {
       date,
       emoji,
       seen: false,
-      createdAt: serverTimestamp()
+      count: increment(1),
+      createdAt: serverTimestamp(),
+      lastSentAt: serverTimestamp()
     }, { merge: true });
   }
 
@@ -50,7 +54,8 @@ export class CongratsService {
               to: data['to'] as string,
               date: data['date'] as string,
               emoji: (data['emoji'] as string) ?? '👏',
-              seen: (data['seen'] as boolean) ?? false
+              seen: (data['seen'] as boolean) ?? false,
+              count: (data['count'] as number) ?? 1
             } as Congrats;
           });
           subscriber.next(items);

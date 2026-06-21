@@ -165,15 +165,30 @@ exports.processNotificationQueue = functions.pubsub
   });
 
 /**
- * Triggered when a congratulation is created.
+ * Triggered when a congratulation is written.
  * Sends a push notification to the recipient only (1 -> 1, no multicast).
- * The deterministic doc id ({date}_{to}_{from}) means re-pressing the same
- * day does not re-create the doc, so onCreate never re-fires -> no spam.
+ * The deterministic doc id ({date}_{to}_{from}) keeps a single doc per
+ * sender -> recipient per day; each clap bumps `count`. We push on every
+ * count increase (spam), but skip writes that don't add a clap (e.g. the
+ * recipient marking it seen) so we never notify on those.
+ * (Kept as onWrite under the original name to update the function in place.)
  */
 exports.onCongratsCreate = functions.firestore
   .document('congratulations/{congratsId}')
-  .onCreate(async (snap, context) => {
-    const data = snap.data() || {};
+  .onWrite(async (change, context) => {
+    const data = change.after.exists ? change.after.data() : null;
+    if (!data) {
+      return null;
+    }
+
+    const before = change.before.exists ? change.before.data() : null;
+    const beforeCount = before ? (before.count || 0) : 0;
+    const afterCount = data.count || 0;
+    if (afterCount <= beforeCount) {
+      // No new clap (seen toggle, deletion, or unrelated edit) -> no push.
+      return null;
+    }
+
     const from = data.from;
     const to = data.to;
     const emoji = data.emoji || '👏';

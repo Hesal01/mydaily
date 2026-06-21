@@ -676,18 +676,29 @@ export class GridComponent implements OnDestroy {
     }, { allowSignalWrites: true });
 
     // Celebrate incoming congratulations live (and replay missed ones on open).
+    // Tracking the clap `count` (not just the doc id) lets every re-send/spam
+    // re-fire the animation, while the badge — counting docs — stays put.
     effect(() => {
       const me = this.currentUserId();
       const list = this.todayCongrats();
       if (!me) return;
-      const incoming = list.filter(c => c.to === me && !c.seen && !this.animatedCongrats.has(c.id));
-      incoming.forEach((c, i) => {
-        this.animatedCongrats.add(c.id);
+      let queued = 0;
+      for (const c of list) {
+        if (c.to !== me) continue;
+        const current = c.count ?? 1;
+        // First time seen this session: an already-seen doc starts at its full
+        // count (no replay); an unseen one starts at 0 (replay what was missed).
+        const baseline = this.animatedCongrats.has(c.id)
+          ? this.animatedCongrats.get(c.id)!
+          : (c.seen ? current : 0);
+        if (current <= baseline) continue;
+        this.animatedCongrats.set(c.id, current);
+        const slot = queued++;
         setTimeout(() => {
           this.celebrateForReceiver(c);
-          this.congratsService.markSeen(c.id);
-        }, i * 450);
-      });
+          if (!c.seen) this.congratsService.markSeen(c.id);
+        }, slot * 450);
+      }
     }, { allowSignalWrites: true });
 
     effect(() => {
@@ -957,7 +968,8 @@ export class GridComponent implements OnDestroy {
   private pressStartX = 0;
   private pressStartY = 0;
   private burstSeq = 0;
-  private readonly animatedCongrats = new Set<string>();
+  // docId -> highest clap count already animated this session.
+  private readonly animatedCongrats = new Map<string, number>();
   private readonly LONG_PRESS_MS = 500;
   private readonly MOVE_CANCEL_PX = 12;
 
