@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, query, where, orderBy, onSnapshot, doc, setDoc, serverTimestamp, getDocs } from '@angular/fire/firestore';
+import { Firestore, collection, query, where, orderBy, onSnapshot, doc, setDoc, serverTimestamp, getDocs, arrayUnion, deleteField } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { HabitDay, HabitId, HabitCompletions, RawHabitCompletions, createEmptyCompletions, normalizeCompletions } from '../models/habit.model';
@@ -142,6 +142,74 @@ export class HabitService {
         bookPages: newPages
       },
       updatedAt: serverTimestamp()
+    }, { merge: true });
+  }
+
+  // ===== Étude des sourates =====
+
+  /**
+   * Marque l'étude comme faite pour la journée et enregistre le dernier
+   * verset atteint sur le doc user. (Pattern markBookForToday.)
+   */
+  async markStudyForToday(
+    userId: string,
+    date: string,
+    currentCompletions: HabitCompletions,
+    verse: number
+  ): Promise<void> {
+    const habitDocRef = doc(this.firestore, 'habits', `${date}_${userId}`);
+    await setDoc(habitDocRef, {
+      userId,
+      date,
+      completions: {
+        ...currentCompletions,
+        study: true
+      },
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    const userDocRef = doc(this.firestore, 'users', userId);
+    await setDoc(userDocRef, { studyVerse: Math.max(0, verse) }, { merge: true });
+  }
+
+  /**
+   * Décoche l'étude de la journée (ne touche pas à studyVerse).
+   */
+  async unmarkStudyForToday(
+    userId: string,
+    date: string,
+    currentCompletions: HabitCompletions
+  ): Promise<void> {
+    const habitDocRef = doc(this.firestore, 'habits', `${date}_${userId}`);
+    await setDoc(habitDocRef, {
+      userId,
+      date,
+      completions: {
+        ...currentCompletions,
+        study: false
+      },
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  }
+
+  /**
+   * Choisit / change la sourate en cours et remet le verset à 0.
+   */
+  async updateStudySurah(userId: string, surahNumber: number): Promise<void> {
+    const docRef = doc(this.firestore, 'users', userId);
+    await setDoc(docRef, { studySurah: surahNumber, studyVerse: 0 }, { merge: true });
+  }
+
+  /**
+   * Termine la sourate en cours : l'ajoute aux sourates terminées et
+   * libère la sourate courante (studySurah / studyVerse effacés).
+   */
+  async completeStudySurah(userId: string, surahNumber: number): Promise<void> {
+    const docRef = doc(this.firestore, 'users', userId);
+    await setDoc(docRef, {
+      studyCompletedSurahs: arrayUnion(surahNumber),
+      studySurah: deleteField(),
+      studyVerse: deleteField()
     }, { merge: true });
   }
 

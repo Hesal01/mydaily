@@ -44,6 +44,13 @@ export const HABITS: readonly HabitConfig[] = [
     name: 'Réseau',
     description: 'Connexion sociale',
     color: '#10b981'
+  },
+  {
+    id: 'study',
+    icon: 'book-open-text',
+    name: 'Étude',
+    description: 'Étudier les versets de ma sourate',
+    color: '#ec4899'
   }
 ] as const;
 

@@ -20,13 +20,7 @@ export class HabitStatsService {
   private dateService = inject(DateService);
 
   private countDone(c: HabitCompletions): number {
-    let n = 0;
-    if (c.sun) n++;
-    if (c.doubleSun) n++;
-    if (c.book) n++;
-    if (c.three) n++;
-    if (c.network) n++;
-    return n;
+    return HABITS.reduce((n, habit) => (c[habit.id] ? n + 1 : n), 0);
   }
 
   private getCompletionsFor(habits: HabitDay[], userId: string, date: string): HabitCompletions | null {
@@ -108,7 +102,8 @@ export class HabitStatsService {
    */
   getWeekCompletion(habits: HabitDay[], userId: string, daysBack = 7): Record<HabitId, number> {
     const dates = this.dateService.getLastNDays(daysBack);
-    const result: Record<string, number> = { sun: 0, doubleSun: 0, book: 0, three: 0, network: 0 };
+    const result: Record<string, number> = {};
+    for (const h of HABITS) result[h.id] = 0;
     for (const date of dates) {
       const c = this.getCompletionsFor(habits, userId, date);
       if (!c) continue;

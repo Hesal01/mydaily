@@ -1,4 +1,4 @@
-export type HabitId = 'sun' | 'doubleSun' | 'book' | 'three' | 'network';
+export type HabitId = 'sun' | 'doubleSun' | 'book' | 'three' | 'network' | 'study';
 
 export interface HabitCompletions {
   sun: boolean;
@@ -6,6 +6,7 @@ export interface HabitCompletions {
   book: boolean;
   three: boolean;
   network: boolean;
+  study: boolean;
   bookPages?: number;
 }
 
@@ -17,6 +18,7 @@ export interface RawHabitCompletions {
   doubleBook?: boolean;
   three?: boolean;
   network?: boolean;
+  study?: boolean;
   bookPages?: number;
 }
 
@@ -35,6 +37,7 @@ export function createEmptyCompletions(): HabitCompletions {
     book: false,
     three: false,
     network: false,
+    study: false,
     bookPages: 0
   };
 }
@@ -58,6 +61,7 @@ export function normalizeCompletions(raw: RawHabitCompletions): HabitCompletions
     book: bookDone,
     three: raw.three ?? false,
     network: raw.network ?? false,
+    study: raw.study ?? false,
     bookPages: raw.bookPages ?? 0
   };
 }

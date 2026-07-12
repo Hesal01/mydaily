@@ -159,13 +159,7 @@ export class HabitButtonsComponent {
 
   readonly completedCount = computed(() => {
     const c = this.completions();
-    let n = 0;
-    if (c.sun) n++;
-    if (c.doubleSun) n++;
-    if (c.book) n++;
-    if (c.three) n++;
-    if (c.network) n++;
-    return n;
+    return this.habits.reduce((n, habit) => (c[habit.id] ? n + 1 : n), 0);
   });
 
   isCompleted(habitId: HabitId): boolean {

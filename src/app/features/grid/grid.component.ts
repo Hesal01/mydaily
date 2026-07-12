@@ -3,6 +3,8 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { HabitButtonsComponent } from './components/habit-buttons.component';
 import { QuranModalComponent } from './components/quran-modal.component';
 import { QuranProgressComponent } from './components/quran-progress.component';
+import { StudyModalComponent } from './components/study-modal.component';
+import { StudyProgressComponent } from './components/study-progress.component';
 import { InstallPromptComponent } from '../../shared/components/install-prompt.component';
 import { ToastComponent } from '../../shared/components/toast.component';
 import { StatsPersonalComponent } from './components/stats-personal.component';
@@ -20,6 +22,7 @@ import { CongratsService } from '../../core/services/congrats.service';
 import { HabitId, HabitCompletions, createEmptyCompletions } from '../../core/models/habit.model';
 import { Congrats } from '../../core/models/congrats.model';
 import { HABITS, USER_ICONS, getHabitConfig } from '../../core/constants/habits.constants';
+import { getSurah } from '../../core/constants/surahs.constants';
 import { CelebrationOverlayComponent, CelebrationBurst, CelebrationParticle } from './components/celebration-overlay.component';
 
 interface CompletionItem {
@@ -35,6 +38,8 @@ interface CompletionItem {
     HabitButtonsComponent,
     QuranModalComponent,
     QuranProgressComponent,
+    StudyModalComponent,
+    StudyProgressComponent,
     InstallPromptComponent,
     ToastComponent,
     StatsPersonalComponent,
@@ -184,6 +189,11 @@ interface CompletionItem {
                   [animalsByUserId]="animalsByUserId()"
                   [currentUserId]="currentUserId()"
                 />
+                <app-study-progress
+                  [users]="visibleUsers()"
+                  [animalsByUserId]="animalsByUserId()"
+                  [currentUserId]="currentUserId()"
+                />
               </div>
             </div>
 
@@ -249,6 +259,21 @@ interface CompletionItem {
           (pageChanged)="onQuranPageChanged($event)"
           (cycleChanged)="onQuranCycleChanged($event)"
           (close)="showQuranModal.set(false)"
+        />
+      }
+
+      @if (showStudyModal()) {
+        <app-study-modal
+          [currentUser]="currentUserObj()"
+          [allUsers]="users()"
+          [animalsByUserId]="animalsByUserId()"
+          [currentUserId]="currentUserId()"
+          [studyDoneToday]="selectedDateUserCompletions().study"
+          (selectSurah)="onStudySelectSurah($event)"
+          (markVerse)="onStudyMarkVerse($event)"
+          (completeSurah)="onStudyComplete($event)"
+          (unmarkToday)="onStudyUnmark()"
+          (close)="showStudyModal.set(false)"
         />
       }
 
@@ -583,6 +608,7 @@ export class GridComponent implements OnDestroy {
   readonly screenIndices = [0, 1, 2, 3, 4, 5];
   readonly screenLabels = ['Habitudes', 'Coran', 'Aperçu', 'Année', 'Classement', 'Paramètres'];
   readonly showQuranModal = signal(false);
+  readonly showStudyModal = signal(false);
 
   readonly currentUserObj = computed(() => {
     const id = this.currentUserId();
@@ -747,12 +773,10 @@ export class GridComponent implements OnDestroy {
     if (!h) {
       const c = this.getMergedCompletions(userId, date);
       let count = 0;
-      if (c.sun) count++;
-      if (c.doubleSun) count++;
-      if (c.book) count++;
-      if (c.three) count++;
-      if (c.network) count++;
-      return this.legendColors[Math.min(count, 5)];
+      for (const habit of this.habits) {
+        if (c[habit.id]) count++;
+      }
+      return this.legendColors[Math.min(count, this.legendColors.length - 1)];
     }
     if (h === 'book') {
       const pages = this.getMergedCompletions(userId, date).bookPages ?? 0;
@@ -819,6 +843,12 @@ export class GridComponent implements OnDestroy {
       return;
     }
 
+    if (habitId === 'study') {
+      this.hapticService.tap();
+      this.showStudyModal.set(true);
+      return;
+    }
+
     const date = this.selectedDate();
     const current = this.selectedDateUserCompletions();
     const wasCompleted = !!current[habitId];
@@ -880,6 +910,100 @@ export class GridComponent implements OnDestroy {
     const userId = this.currentUserId();
     if (!userId) return;
     await this.habitService.updateQuranCycle(userId, cycle);
+  }
+
+  // ===== Étude des sourates =====
+
+  async onStudySelectSurah(surahNumber: number): Promise<void> {
+    const userId = this.currentUserId();
+    if (!userId) return;
+    this.hapticService.tap();
+    await this.habitService.updateStudySurah(userId, surahNumber);
+  }
+
+  async onStudyMarkVerse(verse: number): Promise<void> {
+    const userId = this.currentUserId();
+    if (!userId) return;
+
+    const date = this.selectedDate();
+    const current = this.getMergedCompletions(userId, date);
+    if (current.study) {
+      // Already done today — just update the verse silently.
+      await this.habitService.markStudyForToday(userId, date, current, verse);
+      this.hapticService.success();
+      return;
+    }
+
+    this.hapticService.success();
+    this.applyOptimistic(userId, date, { ...current, study: true });
+
+    this.toastService.show('Étude marquée', {
+      icon: 'book-open-text',
+      iconColor: getHabitConfig('study')?.color,
+      action: {
+        label: 'Annuler',
+        handler: async () => {
+          this.hapticService.tap();
+          this.applyOptimistic(userId, date, { ...current, study: false });
+          await this.habitService.unmarkStudyForToday(userId, date, { ...current, study: true });
+        }
+      }
+    });
+
+    try {
+      await this.habitService.markStudyForToday(userId, date, current, verse);
+    } catch (err) {
+      this.revertOptimistic(userId, date);
+      this.hapticService.error();
+      throw err;
+    }
+  }
+
+  async onStudyComplete(event: { surah: number; verse: number }): Promise<void> {
+    const userId = this.currentUserId();
+    if (!userId) return;
+
+    const date = this.selectedDate();
+    const current = this.getMergedCompletions(userId, date);
+
+    this.hapticService.success();
+    this.applyOptimistic(userId, date, { ...current, study: true });
+    this.spawnBurstAtViewportCenter();
+    const name = getSurah(event.surah)?.nameFr ?? '';
+    this.showCongratsMessage(`Sourate ${name} terminée ! 🎉`);
+
+    try {
+      await this.habitService.markStudyForToday(userId, date, current, event.verse);
+      await this.habitService.completeStudySurah(userId, event.surah);
+    } catch (err) {
+      this.revertOptimistic(userId, date);
+      this.hapticService.error();
+      throw err;
+    }
+  }
+
+  async onStudyUnmark(): Promise<void> {
+    const userId = this.currentUserId();
+    if (!userId) return;
+
+    const date = this.selectedDate();
+    const current = this.getMergedCompletions(userId, date);
+    this.hapticService.tap();
+    this.applyOptimistic(userId, date, { ...current, study: false });
+    await this.habitService.unmarkStudyForToday(userId, date, current);
+  }
+
+  private spawnBurstAtViewportCenter(): void {
+    const id = ++this.burstSeq;
+    this.celebrations.update(list => [...list, {
+      id,
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 3,
+      particles: this.makeParticles()
+    }]);
+    setTimeout(() => {
+      this.celebrations.update(list => list.filter(b => b.id !== id));
+    }, 1100);
   }
 
   navigateToPreviousDay(): void {
@@ -958,6 +1082,7 @@ export class GridComponent implements OnDestroy {
       && a.book === b.book
       && a.three === b.three
       && a.network === b.network
+      && a.study === b.study
       && (a.bookPages ?? 0) === (b.bookPages ?? 0);
   }
 
@@ -989,7 +1114,7 @@ export class GridComponent implements OnDestroy {
 
   private hasAnyCompletion(userId: string, date: string): boolean {
     const c = this.getMergedCompletions(userId, date);
-    return c.sun || c.doubleSun || c.book || c.three || c.network;
+    return this.habits.some(habit => !!c[habit.id]);
   }
 
   // Only today's cells, belonging to someone else, with at least one habit done.

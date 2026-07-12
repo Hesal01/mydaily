@@ -16,7 +16,8 @@ const HABIT_EMOJIS = {
   book: '📖',
   doubleBook: '📖📖',
   three: '3️⃣',
-  network: '🌐'
+  network: '🌐',
+  study: '📚'
 };
 
 /**
@@ -52,7 +53,7 @@ exports.onHabitUpdate = functions.firestore
 
     // Find which habits were just activated (false -> true)
     const activatedHabits = [];
-    const habitKeys = ['sun', 'doubleSun', 'book', 'doubleBook', 'three', 'network'];
+    const habitKeys = ['sun', 'doubleSun', 'book', 'doubleBook', 'three', 'network', 'study'];
 
     const beforeCompletions = before?.completions || {};
     const afterCompletions = after?.completions || {};
