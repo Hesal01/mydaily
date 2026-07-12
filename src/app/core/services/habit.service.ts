@@ -150,12 +150,16 @@ export class HabitService {
   /**
    * Marque l'étude comme faite pour la journée et enregistre le dernier
    * verset atteint sur le doc user. (Pattern markBookForToday.)
+   *
+   * Écrit aussi l'avancée dans la mémoire par sourate (`studyProgress`).
+   * Le merge Firestore fusionne les clés de la map sans écraser les autres.
    */
   async markStudyForToday(
     userId: string,
     date: string,
     currentCompletions: HabitCompletions,
-    verse: number
+    verse: number,
+    surah: number
   ): Promise<void> {
     const habitDocRef = doc(this.firestore, 'habits', `${date}_${userId}`);
     await setDoc(habitDocRef, {
@@ -168,8 +172,12 @@ export class HabitService {
       updatedAt: serverTimestamp()
     }, { merge: true });
 
+    const safeVerse = Math.max(0, verse);
     const userDocRef = doc(this.firestore, 'users', userId);
-    await setDoc(userDocRef, { studyVerse: Math.max(0, verse) }, { merge: true });
+    await setDoc(userDocRef, {
+      studyVerse: safeVerse,
+      studyProgress: { [surah]: safeVerse }
+    }, { merge: true });
   }
 
   /**
@@ -193,21 +201,42 @@ export class HabitService {
   }
 
   /**
-   * Choisit / change la sourate en cours et remet le verset à 0.
+   * Choisit / change la sourate en cours et reprend au verset atteint.
+   *
+   * `resumeVerse` = dernier verset mémorisé pour la sourate choisie (0 si neuve).
+   * Avant de basculer, l'avancée de la sourate quittée (`prevSurah`/`prevVerse`)
+   * est sauvegardée dans la mémoire par sourate pour ne jamais être perdue —
+   * y compris pour les users existants dont la map n'existe pas encore.
    */
-  async updateStudySurah(userId: string, surahNumber: number): Promise<void> {
+  async updateStudySurah(
+    userId: string,
+    surahNumber: number,
+    resumeVerse: number = 0,
+    prevSurah?: number,
+    prevVerse?: number
+  ): Promise<void> {
     const docRef = doc(this.firestore, 'users', userId);
-    await setDoc(docRef, { studySurah: surahNumber, studyVerse: 0 }, { merge: true });
+    const data: Record<string, unknown> = {
+      studySurah: surahNumber,
+      studyVerse: Math.max(0, resumeVerse)
+    };
+    if (prevSurah != null && prevSurah !== surahNumber && prevVerse != null && prevVerse > 0) {
+      // Merge Firestore : fusionne cette clé de map sans écraser les autres.
+      data['studyProgress'] = { [prevSurah]: prevVerse };
+    }
+    await setDoc(docRef, data, { merge: true });
   }
 
   /**
-   * Termine la sourate en cours : l'ajoute aux sourates terminées et
-   * libère la sourate courante (studySurah / studyVerse effacés).
+   * Termine la sourate en cours : l'ajoute aux sourates terminées, mémorise
+   * le total de versets dans la map (cohérence) et libère la sourate courante
+   * (studySurah / studyVerse effacés).
    */
-  async completeStudySurah(userId: string, surahNumber: number): Promise<void> {
+  async completeStudySurah(userId: string, surahNumber: number, totalVerses: number): Promise<void> {
     const docRef = doc(this.firestore, 'users', userId);
     await setDoc(docRef, {
       studyCompletedSurahs: arrayUnion(surahNumber),
+      studyProgress: { [surahNumber]: Math.max(0, totalVerses) },
       studySurah: deleteField(),
       studyVerse: deleteField()
     }, { merge: true });

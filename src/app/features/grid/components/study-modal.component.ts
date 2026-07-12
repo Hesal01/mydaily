@@ -42,6 +42,9 @@ type SurahState = 'free' | 'taken' | 'completed' | 'mine';
                   <span class="s-ar">{{ s.nameAr }}</span>
                 </span>
                 <span class="s-ayahs">{{ s.ayahs }} v.</span>
+                @if (st === 'free' && progressFor(s.number) > 0) {
+                  <span class="s-mine-progress">toi : v. {{ progressFor(s.number) }}</span>
+                }
                 <span class="s-state">
                   @if (st === 'completed') {
                     <span class="s-check">✓</span>
@@ -60,6 +63,10 @@ type SurahState = 'free' | 'taken' | 'completed' | 'mine';
           <!-- ===== Étude de la sourate en cours ===== -->
           <div class="modal-title">{{ surah()?.nameAr }} · {{ surah()?.nameFr }}</div>
           <div class="modal-sub">Jusqu'à quel verset es-tu arrivé(e) ?</div>
+
+          @if (resumedFrom() > 0) {
+            <div class="resume-hint">Reprise au verset {{ resumedFrom() }}</div>
+          }
 
           <div class="current-page">
             Verset {{ verse() }} / {{ ayahs() }}
@@ -131,6 +138,12 @@ type SurahState = 'free' | 'taken' | 'completed' | 'mine';
       font-weight: 700;
       color: #ec4899;
       margin-bottom: 20px;
+    }
+    .resume-hint {
+      text-align: center;
+      font-size: 12px;
+      color: #ec4899;
+      margin: -8px 0 14px;
     }
     .quick-buttons {
       display: flex;
@@ -281,6 +294,16 @@ type SurahState = 'free' | 'taken' | 'completed' | 'mine';
       font-size: 11px;
       color: #8b949e;
     }
+    .s-mine-progress {
+      flex-shrink: 0;
+      font-size: 10px;
+      font-weight: 600;
+      color: #ec4899;
+      background: #fdf2f8;
+      border-radius: 6px;
+      padding: 2px 6px;
+      white-space: nowrap;
+    }
     .s-state {
       flex-shrink: 0;
       width: 26px;
@@ -317,7 +340,7 @@ export class StudyModalComponent {
   readonly studyDoneToday = input<boolean>(false);
 
   readonly selectSurah = output<number>();
-  readonly markVerse = output<number>();
+  readonly markVerse = output<{ surah: number; verse: number }>();
   readonly completeSurah = output<{ surah: number; verse: number }>();
   readonly unmarkToday = output<void>();
   readonly close = output<void>();
@@ -342,9 +365,22 @@ export class StudyModalComponent {
   });
   readonly ayahs = computed(() => this.surah()?.ayahs ?? 0);
 
-  private readonly minVerse = computed(() =>
-    this.localSurah() !== null ? 0 : (this.currentUser()?.studyVerse ?? 0)
-  );
+  // Dernier verset mémorisé pour une sourate donnée (map perso, 0 si absente).
+  progressFor(n: number): number {
+    return this.currentUser()?.studyProgress?.[String(n)] ?? 0;
+  }
+
+  // Verset de reprise quand on vient de choisir une sourate déjà entamée.
+  readonly resumedFrom = computed(() => {
+    const local = this.localSurah();
+    return local !== null ? this.progressFor(local) : 0;
+  });
+
+  private readonly minVerse = computed(() => {
+    const local = this.localSurah();
+    if (local !== null) return this.progressFor(local);
+    return this.currentUser()?.studyVerse ?? 0;
+  });
   readonly verseOptions = computed(() => {
     const start = Math.max(1, this.minVerse());
     const end = this.ayahs();
@@ -396,7 +432,7 @@ export class StudyModalComponent {
   pickSurah(n: number): void {
     if (this.surahState(n) !== 'free') return;
     this.localSurah.set(n);
-    this.verse.set(1);
+    this.verse.set(Math.max(1, this.progressFor(n)));
     this.forceSelector.set(false);
     this.selectSurah.emit(n);
   }
@@ -425,7 +461,7 @@ export class StudyModalComponent {
       this.completeSurah.emit({ surah: s, verse: a });
       this.completedView.set(true);
     } else {
-      this.markVerse.emit(v);
+      this.markVerse.emit({ surah: s, verse: v });
       this.close.emit();
     }
   }

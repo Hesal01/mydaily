@@ -918,10 +918,18 @@ export class GridComponent implements OnDestroy {
     const userId = this.currentUserId();
     if (!userId) return;
     this.hapticService.tap();
-    await this.habitService.updateStudySurah(userId, surahNumber);
+    const u = this.currentUserObj();
+    const resumeVerse = u?.studyProgress?.[String(surahNumber)] ?? 0;
+    await this.habitService.updateStudySurah(
+      userId,
+      surahNumber,
+      resumeVerse,
+      u?.studySurah,
+      u?.studyVerse ?? 0
+    );
   }
 
-  async onStudyMarkVerse(verse: number): Promise<void> {
+  async onStudyMarkVerse(event: { surah: number; verse: number }): Promise<void> {
     const userId = this.currentUserId();
     if (!userId) return;
 
@@ -929,7 +937,7 @@ export class GridComponent implements OnDestroy {
     const current = this.getMergedCompletions(userId, date);
     if (current.study) {
       // Already done today — just update the verse silently.
-      await this.habitService.markStudyForToday(userId, date, current, verse);
+      await this.habitService.markStudyForToday(userId, date, current, event.verse, event.surah);
       this.hapticService.success();
       return;
     }
@@ -951,7 +959,7 @@ export class GridComponent implements OnDestroy {
     });
 
     try {
-      await this.habitService.markStudyForToday(userId, date, current, verse);
+      await this.habitService.markStudyForToday(userId, date, current, event.verse, event.surah);
     } catch (err) {
       this.revertOptimistic(userId, date);
       this.hapticService.error();
@@ -973,8 +981,8 @@ export class GridComponent implements OnDestroy {
     this.showCongratsMessage(`Sourate ${name} terminée ! 🎉`);
 
     try {
-      await this.habitService.markStudyForToday(userId, date, current, event.verse);
-      await this.habitService.completeStudySurah(userId, event.surah);
+      await this.habitService.markStudyForToday(userId, date, current, event.verse, event.surah);
+      await this.habitService.completeStudySurah(userId, event.surah, event.verse);
     } catch (err) {
       this.revertOptimistic(userId, date);
       this.hapticService.error();
