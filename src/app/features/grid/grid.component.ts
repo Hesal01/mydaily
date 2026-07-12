@@ -7,10 +7,13 @@ import { StudyModalComponent } from './components/study-modal.component';
 import { StudyProgressComponent } from './components/study-progress.component';
 import { InstallPromptComponent } from '../../shared/components/install-prompt.component';
 import { ToastComponent } from '../../shared/components/toast.component';
-import { StatsPersonalComponent } from './components/stats-personal.component';
-import { StatsYearComponent } from './components/stats-year.component';
-import { StatsLeaderboardComponent } from './components/stats-leaderboard.component';
-import { SettingsComponent } from './components/settings.component';
+// Screens temporarily retired from the carousel (app narrowed to 3 screens).
+// Components kept in the repo for easy reinstatement — re-add the import,
+// the `imports` array entry and the template `<div class="screen">` block.
+// import { StatsPersonalComponent } from './components/stats-personal.component';
+// import { StatsYearComponent } from './components/stats-year.component';
+// import { StatsLeaderboardComponent } from './components/stats-leaderboard.component';
+// import { SettingsComponent } from './components/settings.component';
 import { AuthService } from '../../core/services/auth.service';
 import { HabitService } from '../../core/services/habit.service';
 import { DateService } from '../../core/services/date.service';
@@ -42,10 +45,6 @@ interface CompletionItem {
     StudyProgressComponent,
     InstallPromptComponent,
     ToastComponent,
-    StatsPersonalComponent,
-    StatsYearComponent,
-    StatsLeaderboardComponent,
-    SettingsComponent,
     CelebrationOverlayComponent,
   ],
   template: `
@@ -181,7 +180,7 @@ interface CompletionItem {
               </div>
             </div>
 
-            <!-- Screen 1: Quran progress -->
+            <!-- Screen 1: Quran reading progress -->
             <div class="screen">
               <div class="calendar-zone">
                 <app-quran-progress
@@ -189,47 +188,18 @@ interface CompletionItem {
                   [animalsByUserId]="animalsByUserId()"
                   [currentUserId]="currentUserId()"
                 />
+              </div>
+            </div>
+
+            <!-- Screen 2: Study progress -->
+            <div class="screen">
+              <div class="calendar-zone">
                 <app-study-progress
                   [users]="visibleUsers()"
                   [animalsByUserId]="animalsByUserId()"
                   [currentUserId]="currentUserId()"
                 />
               </div>
-            </div>
-
-            <!-- Screen 2: Personal stats -->
-            <div class="screen">
-              <app-stats-personal
-                [habits]="habits$()"
-                [currentUser]="currentUserObj()"
-              />
-            </div>
-
-            <!-- Screen 3: Year heatmap -->
-            <div class="screen">
-              <app-stats-year
-                [habits$]="habits$()"
-                [currentUser]="currentUserObj()"
-              />
-            </div>
-
-            <!-- Screen 4: Leaderboard -->
-            <div class="screen">
-              <app-stats-leaderboard
-                [habits$]="habits$()"
-                [users]="visibleUsers()"
-                [animalsByUserId]="animalsByUserId()"
-                [currentUserId]="currentUserId()"
-              />
-            </div>
-
-            <!-- Screen 5: Settings -->
-            <div class="screen">
-              <app-settings
-                [currentUser]="currentUserObj()"
-                [visibleUsersCount]="visibleUsers().length"
-                [totalUsersCount]="users().length"
-              />
             </div>
           </div>
         </div>
@@ -605,8 +575,8 @@ export class GridComponent implements OnDestroy {
   readonly filteredHabit = signal<HabitId | null>(null);
 
   readonly currentScreen = signal(0);
-  readonly screenIndices = [0, 1, 2, 3, 4, 5];
-  readonly screenLabels = ['Habitudes', 'Coran', 'Aperçu', 'Année', 'Classement', 'Paramètres'];
+  readonly screenIndices = [0, 1, 2];
+  readonly screenLabels = ['Habitudes', 'Lecture', 'Étude'];
   readonly showQuranModal = signal(false);
   readonly showStudyModal = signal(false);
 

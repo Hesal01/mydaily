@@ -48,7 +48,7 @@ interface Picked {
   template: `
     <div class="study-progress">
       <div class="header">
-        <div class="title">Le Coran, ensemble</div>
+        <div class="title">Progression étude</div>
         <div class="counter num">{{ completedCount() }}/{{ total }} sourates étudiées@if (mineCompletedCount() > 0) {<span class="mine-count"> · dont {{ mineCompletedCount() }} par toi</span>}</div>
       </div>
 
@@ -68,7 +68,7 @@ interface Picked {
               </div>
             }
             @case ('gather') {
-              <div class="seg prog gather" [style.flex]="seg.flex" [attr.title]="seg.title">
+              <div class="seg prog gather" [class.mine]="seg.mine" [style.flex]="seg.flex" [attr.title]="seg.title">
                 <span class="dpack">
                   @for (em of seg.packEmojis; track $index) { <span class="pem">{{ em }}</span> }
                   <span class="pplus num">+{{ seg.packPlus }}</span>
@@ -77,7 +77,7 @@ interface Picked {
               </div>
             }
             @case ('lanes') {
-              <div class="seg prog" [style.flex]="seg.flex" [attr.title]="seg.title">
+              <div class="seg prog" [class.mine]="seg.mine" [style.flex]="seg.flex" [attr.title]="seg.title">
                 @for (lane of seg.lanes; track $index) {
                   <span class="dlane">
                     <span class="dtrace" [class.me]="lane.mine" [style.width.%]="lane.pct"></span>
@@ -124,6 +124,10 @@ interface Picked {
       --gold-soft: color-mix(in srgb, #d97706 22%, #ffffff);
       --gold-line: color-mix(in srgb, #d97706 45%, transparent);
       --green: var(--color-success);
+      --green-soft: color-mix(in srgb, #2da44e 22%, #ffffff);
+      --green-line: color-mix(in srgb, #2da44e 55%, transparent);
+      /* Co-étudiants sur MA sourate en cours : orange vif, lisible sur fond vert pâle. */
+      --other-orange: #ea8a1f;
       --free: var(--color-surface-2);
       padding: 8px 0 16px;
       border-top: 1px solid var(--color-surface-1);
@@ -198,6 +202,11 @@ interface Picked {
       align-items: center;
       justify-content: center;
     }
+    /* Sourate en cours DU user courant (seul ou partagée) : vert pâle + liseré vert 2px. */
+    .seg.prog.mine {
+      background: var(--green-soft);
+      box-shadow: inset 0 0 0 2px var(--green-line);
+    }
     .seg.free { background: var(--free); cursor: pointer; }
 
     .dlane { position: relative; flex: 1; min-height: 0; }
@@ -208,6 +217,8 @@ interface Picked {
       border-radius: 3px;
     }
     .dtrace.me { background: var(--green); }
+    /* Sur MA sourate en cours, les traces des AUTRES passent en orange (ma trace reste verte). */
+    .seg.prog.mine .dtrace:not(.me) { background: var(--other-orange); }
     .drider {
       position: absolute;
       top: 50%;
@@ -403,6 +414,8 @@ export class StudyProgressComponent {
       if (members && members.length > 0) {
         seg.title = members.map(m => `${m.emoji} v. ${m.verse}/${s.ayahs}`).join(' · ') + ` — ${s.nameFr}`;
         seg.showName = s.ayahs >= 40;
+        // Le user courant étudie cette sourate -> segment mis en vert (fond/liseré).
+        seg.mine = members.some(m => m.mine);
         if (members.length >= 4) {
           seg.kind = 'gather';
           seg.packEmojis = members.slice(0, 3).map(m => m.emoji);
