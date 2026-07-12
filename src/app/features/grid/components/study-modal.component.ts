@@ -2,7 +2,14 @@ import { Component, input, output, signal, computed } from '@angular/core';
 import { User } from '../../../core/models/user.model';
 import { SURAHS, getSurah } from '../../../core/constants/surahs.constants';
 
-type SurahState = 'free' | 'taken' | 'completed' | 'mine';
+type SelState = 'free' | 'prog' | 'done';
+
+interface CoStudent {
+  emoji: string;
+  verse: number;
+  left: string;
+  title: string;
+}
 
 @Component({
   selector: 'app-study-modal',
@@ -23,35 +30,32 @@ type SurahState = 'free' | 'taken' | 'completed' | 'mine';
             </div>
           </div>
         } @else if (showSelector()) {
-          <!-- ===== Sélecteur de sourate ===== -->
+          <!-- ===== Sélecteur enrichi (maquette C) ===== -->
           <div class="modal-title">Choisis ta sourate</div>
           <div class="modal-sub">Chacun étudie une sourate différente. Ensemble, on couvre tout le Coran.</div>
 
           <div class="surah-list">
             @for (s of surahs; track s.number) {
-              @let st = surahState(s.number);
+              @let st = selState(s.number);
               <button
-                class="surah-row"
-                [class.disabled]="st !== 'free'"
-                [disabled]="st !== 'free'"
+                class="srow"
+                [class.join]="st !== 'done'"
+                [disabled]="st === 'done'"
                 (click)="pickSurah(s.number)"
               >
-                <span class="s-num">{{ s.number }}</span>
-                <span class="s-names">
-                  <span class="s-fr">{{ s.nameFr }}</span>
-                  <span class="s-ar">{{ s.nameAr }}</span>
-                </span>
-                <span class="s-ayahs">{{ s.ayahs }} v.</span>
-                @if (st === 'free' && progressFor(s.number) > 0) {
-                  <span class="s-mine-progress">toi : v. {{ progressFor(s.number) }}</span>
-                }
-                <span class="s-state">
-                  @if (st === 'completed') {
-                    <span class="s-check">✓</span>
-                  } @else if (st === 'taken' || st === 'mine') {
-                    <span class="s-owner">{{ ownerAnimal(s.number) }}</span>
+                <span class="snum num">{{ s.number }}</span>
+                <span class="sinfo">
+                  <span class="sfr">{{ s.nameFr }}</span>
+                  <span class="say num">{{ s.ayahs }} v.</span>
+                  @if (st === 'prog') {
+                    <span class="tag prog">{{ progEmojis(s.number) }} en cours · rejoindre</span>
+                  } @else if (st === 'done') {
+                    <span class="tag done">✓ terminée</span>
+                  } @else if (progressFor(s.number) > 0) {
+                    <span class="tag me num">toi : v. {{ progressFor(s.number) }}</span>
                   }
                 </span>
+                <span class="ar" lang="ar" dir="rtl">{{ s.nameAr }}</span>
               </button>
             }
           </div>
@@ -60,42 +64,39 @@ type SurahState = 'free' | 'taken' | 'completed' | 'mine';
             <button class="btn-close" (click)="close.emit()">Fermer</button>
           </div>
         } @else {
-          <!-- ===== Étude de la sourate en cours ===== -->
-          <div class="modal-title">{{ surah()?.nameAr }} · {{ surah()?.nameFr }}</div>
-          <div class="modal-sub">Jusqu'à quel verset es-tu arrivé(e) ?</div>
+          <!-- ===== La piste : saisie quotidienne (maquette B) ===== -->
+          <div class="m-ar ar" lang="ar" dir="rtl">{{ surah()?.nameAr }}</div>
+          <div class="m-sub num">{{ surah()?.nameFr }} · {{ ayahs() }} versets</div>
 
-          @if (resumedFrom() > 0) {
-            <div class="resume-hint">Reprise au verset {{ resumedFrom() }}</div>
-          }
+          <div class="vhead num">verset {{ verse() }} / {{ ayahs() }}@if (delta() > 0) {<span class="vdelta"> +{{ delta() }} aujourd'hui</span>}</div>
 
-          <div class="current-page">
-            Verset {{ verse() }} / {{ ayahs() }}
+          <div class="vtrack">
+            <span class="vfill" [style.width.%]="fillPct()"></span>
+            @for (c of coStudents(); track c.title) {
+              <span class="vrider" [style.left]="c.left" [attr.title]="c.title">{{ c.emoji }}</span>
+            }
+            <span class="vrider me" [style.left]="myRiderLeft()" [attr.title]="myTitle()">{{ myEmoji() }}</span>
           </div>
 
-          <div class="quick-buttons">
-            <button class="quick-btn" (click)="increment(1)">+1</button>
-            <button class="quick-btn" (click)="increment(5)">+5</button>
-            <button class="quick-btn" (click)="increment(10)">+10</button>
+          <div class="chips">
+            <button class="chip num" (click)="increment(1)">+1</button>
+            <button class="chip num" (click)="increment(3)">+3</button>
+            <button class="chip num" (click)="increment(5)">+5</button>
+            <button class="chip num" (click)="increment(10)">+10</button>
+            <span class="minis">
+              <button class="mini" (click)="decrement()" aria-label="Reculer d'un verset">−</button>
+              <button class="mini" (click)="increment(1)" aria-label="Avancer d'un verset">+</button>
+            </span>
           </div>
 
-          <div class="select-row">
-            <label for="verse-select">Aller au verset :</label>
-            <select id="verse-select" [value]="verse()" (change)="onSelectChange($event)">
-              @for (v of verseOptions(); track v) {
-                <option [value]="v" [selected]="v === verse()">{{ v }}</option>
-              }
-            </select>
-          </div>
+          <button class="valid" [class.finish]="verse() >= ayahs()" (click)="validate()">
+            @if (verse() >= ayahs()) { Terminer la sourate 🎉 } @else { Valider }
+          </button>
 
-          <div class="modal-actions two">
-            <button class="btn-primary" (click)="validate()">Valider</button>
-            <button class="btn-close" (click)="close.emit()">Fermer</button>
-          </div>
-
-          <div class="secondary-row">
-            <button class="link-btn" (click)="openSelector()">Changer de sourate</button>
+          <div class="mlinks">
+            <span (click)="openSelector()">Changer de sourate</span>
             @if (studyDoneToday()) {
-              <button class="link-btn" (click)="onUnmark()">Décocher aujourd'hui</button>
+              <span (click)="onUnmark()">Décocher aujourd'hui</span>
             }
           </div>
         }
@@ -113,12 +114,23 @@ type SurahState = 'free' | 'taken' | 'completed' | 'mine';
       z-index: 100;
     }
     .modal {
+      --gold: #d97706;
+      --gold-soft: color-mix(in srgb, #d97706 22%, #ffffff);
+      --green: var(--color-success);
       background: #ffffff;
       border-radius: 16px;
       padding: 24px;
       width: min(360px, 92vw);
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
     }
+    .num { font-variant-numeric: tabular-nums; }
+    .ar {
+      font-family: 'Geeza Pro', 'Al Bayan', 'Noto Naskh Arabic', 'Amiri', serif;
+      color: #1f2328;
+      white-space: nowrap;
+      line-height: 1.2;
+    }
+
     .modal-title {
       font-size: 18px;
       font-weight: 600;
@@ -132,61 +144,168 @@ type SurahState = 'free' | 'taken' | 'completed' | 'mine';
       color: #656d76;
       margin-bottom: 18px;
     }
-    .current-page {
-      text-align: center;
-      font-size: 24px;
-      font-weight: 700;
-      color: #ec4899;
-      margin-bottom: 20px;
-    }
-    .resume-hint {
-      text-align: center;
+
+    /* ===== La piste (maquette B) ===== */
+    .m-ar { font-size: 30px; text-align: center; }
+    .m-sub {
       font-size: 12px;
-      color: #ec4899;
-      margin: -8px 0 14px;
+      color: #656d76;
+      text-align: center;
+      margin: 2px 0 16px;
     }
-    .quick-buttons {
+    .vhead {
+      text-align: center;
+      font-size: 16px;
+      font-weight: 700;
+      color: #1f2328;
+      margin-bottom: 6px;
+    }
+    .vdelta { font-size: 12px; font-weight: 600; color: var(--green); }
+    .vtrack {
+      position: relative;
+      height: 18px;
+      border-radius: 9px;
+      background: var(--gold-soft);
+      margin: 0 4px 18px;
+    }
+    .vfill {
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      background: var(--green);
+      border-radius: 9px;
+      transition: width var(--duration-base) var(--ease-out);
+    }
+    .vrider {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 16px;
+      line-height: 1;
+      z-index: 1;
+      pointer-events: none;
+    }
+    .vrider.me { z-index: 2; }
+    .chips {
       display: flex;
-      gap: 10px;
       justify-content: center;
-      margin-bottom: 20px;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 18px;
     }
-    .quick-btn {
-      flex: 1;
-      padding: 12px;
-      border-radius: 10px;
-      border: 2px solid #ec4899;
-      background: #ffffff;
-      color: #ec4899;
-      font-size: 17px;
+    .chip {
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 0;
+      background: var(--color-surface-2);
+      font-size: 14px;
       font-weight: 600;
+      color: #1f2328;
       cursor: pointer;
       touch-action: manipulation;
     }
-    .quick-btn:active {
-      background: #ec4899;
+    .chip:active { background: var(--green); color: #ffffff; }
+    .minis { display: flex; gap: 6px; margin-left: 4px; }
+    .mini {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 0;
+      background: var(--color-surface-2);
+      color: #656d76;
+      font-size: 16px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .mini:active { background: var(--color-border); }
+    .valid {
+      display: block;
+      width: 100%;
+      padding: 13px;
+      border: 0;
+      border-radius: 14px;
+      background: var(--green);
       color: #ffffff;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
     }
-    .select-row {
+    .valid:active { filter: brightness(0.94); }
+    .valid.finish { background: var(--gold); }
+    .mlinks {
       display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-bottom: 20px;
-    }
-    .select-row label {
-      font-size: 14px;
+      justify-content: space-between;
+      margin-top: 12px;
+      font-size: 12px;
       color: #656d76;
     }
-    .select-row select {
-      padding: 10px 12px;
-      border-radius: 8px;
-      border: 1px solid #d0d7de;
-      font-size: 16px;
-      background: #f6f8fa;
-      color: #1f2328;
-      -webkit-appearance: none;
-      appearance: none;
+    .mlinks span {
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      touch-action: manipulation;
     }
+
+    /* ===== Sélecteur enrichi (maquette C) ===== */
+    .surah-list {
+      max-height: 52vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      border: 1px solid #eaeef2;
+      border-radius: 10px;
+      margin-bottom: 16px;
+      padding: 0 10px;
+    }
+    .srow {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 2px;
+      border: none;
+      border-bottom: 1px solid #eaeef2;
+      background: #ffffff;
+      text-align: left;
+      touch-action: manipulation;
+      font-family: inherit;
+    }
+    .srow:last-child { border-bottom: none; }
+    .srow.join { cursor: pointer; }
+    .srow.join:active { background: #fbf3e6; }
+    .srow[disabled] { cursor: default; }
+    .snum {
+      width: 20px;
+      flex-shrink: 0;
+      font-size: 11px;
+      color: #656d76;
+      text-align: center;
+    }
+    .sinfo {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .sfr { font-size: 14px; font-weight: 600; color: #1f2328; }
+    .say { font-size: 11px; color: #656d76; }
+    .tag {
+      display: inline-block;
+      width: fit-content;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 8px;
+      border-radius: 999px;
+      margin-top: 3px;
+    }
+    .tag.done {
+      background: var(--gold-soft);
+      color: color-mix(in srgb, var(--gold) 78%, #1f2328);
+    }
+    .tag.prog { background: var(--color-surface-2); color: #1f2328; }
+    .tag.me { background: var(--green); color: #ffffff; }
+    .srow .ar { font-size: 22px; }
+
     .modal-actions {
       display: flex;
       justify-content: center;
@@ -198,14 +317,14 @@ type SurahState = 'free' | 'taken' | 'completed' | 'mine';
       padding: 12px 24px;
       border-radius: 8px;
       border: none;
-      background: #ec4899;
+      background: var(--gold);
       color: #ffffff;
       font-size: 15px;
       font-weight: 600;
       cursor: pointer;
       touch-action: manipulation;
     }
-    .btn-primary:active { background: #d63384; }
+    .btn-primary:active { filter: brightness(0.92); }
     .btn-close {
       flex: 1;
       padding: 12px 24px;
@@ -219,99 +338,6 @@ type SurahState = 'free' | 'taken' | 'completed' | 'mine';
       touch-action: manipulation;
     }
     .btn-close:active { background: #eaeef2; }
-    .secondary-row {
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-    }
-    .link-btn {
-      background: none;
-      border: none;
-      color: #656d76;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      padding: 4px;
-      text-decoration: underline;
-      touch-action: manipulation;
-    }
-
-    /* ===== Sélecteur ===== */
-    .surah-list {
-      max-height: 52vh;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      border: 1px solid #eaeef2;
-      border-radius: 10px;
-      margin-bottom: 16px;
-    }
-    .surah-row {
-      width: 100%;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      border: none;
-      border-bottom: 1px solid #f0f2f5;
-      background: #ffffff;
-      cursor: pointer;
-      text-align: left;
-      touch-action: manipulation;
-    }
-    .surah-row:last-child { border-bottom: none; }
-    .surah-row:active:not(.disabled) { background: #fdf2f8; }
-    .surah-row.disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
-    }
-    .s-num {
-      flex-shrink: 0;
-      width: 26px;
-      font-size: 12px;
-      font-weight: 700;
-      color: #ec4899;
-      text-align: center;
-    }
-    .s-names {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 1px;
-    }
-    .s-fr {
-      font-size: 14px;
-      font-weight: 600;
-      color: #1f2328;
-    }
-    .s-ar {
-      font-size: 13px;
-      color: #656d76;
-      direction: rtl;
-    }
-    .s-ayahs {
-      flex-shrink: 0;
-      font-size: 11px;
-      color: #8b949e;
-    }
-    .s-mine-progress {
-      flex-shrink: 0;
-      font-size: 10px;
-      font-weight: 600;
-      color: #ec4899;
-      background: #fdf2f8;
-      border-radius: 6px;
-      padding: 2px 6px;
-      white-space: nowrap;
-    }
-    .s-state {
-      flex-shrink: 0;
-      width: 26px;
-      text-align: center;
-      font-size: 18px;
-      line-height: 1;
-    }
-    .s-check { color: #ec4899; font-weight: 800; }
 
     /* ===== Terminée ===== */
     .done-view {
@@ -370,23 +396,47 @@ export class StudyModalComponent {
     return this.currentUser()?.studyProgress?.[String(n)] ?? 0;
   }
 
-  // Verset de reprise quand on vient de choisir une sourate déjà entamée.
-  readonly resumedFrom = computed(() => {
-    const local = this.localSurah();
-    return local !== null ? this.progressFor(local) : 0;
-  });
-
+  // Plancher = verset atteint à l'ouverture (base du delta du jour).
   private readonly minVerse = computed(() => {
     const local = this.localSurah();
     if (local !== null) return this.progressFor(local);
     return this.currentUser()?.studyVerse ?? 0;
   });
-  readonly verseOptions = computed(() => {
-    const start = Math.max(1, this.minVerse());
-    const end = this.ayahs();
-    const out: number[] = [];
-    for (let v = start; v <= end; v++) out.push(v);
-    return out;
+
+  // Δ du jour : versets ajoutés depuis l'ouverture.
+  readonly delta = computed(() => Math.max(0, this.verse() - this.minVerse()));
+
+  readonly fillPct = computed(() => {
+    const a = this.ayahs();
+    return a > 0 ? Math.round((this.verse() / a) * 100) : 0;
+  });
+
+  readonly myEmoji = computed(() => {
+    const id = this.currentUserId();
+    return (id ? this.animalsByUserId()[id] : '') || '🙂';
+  });
+  readonly myRiderLeft = computed(() => `clamp(10px, ${this.fillPct()}%, calc(100% - 10px))`);
+  readonly myTitle = computed(() => `${this.myEmoji()} v. ${this.verse()}/${this.ayahs()}`);
+
+  // Co-étudiants de la sourate en cours (posés à leur position sur la piste).
+  readonly coStudents = computed<CoStudent[]>(() => {
+    const n = this.activeSurahNumber();
+    const meId = this.currentUserId();
+    const a = this.ayahs();
+    if (!n) return [];
+    return this.allUsers()
+      .filter(u => u.id !== meId && u.studySurah === n)
+      .map(u => {
+        const v = u.studyVerse ?? 0;
+        const pct = a > 0 ? Math.round((v / a) * 100) : 0;
+        const emoji = this.animalsByUserId()[u.id] || '?';
+        return {
+          emoji,
+          verse: v,
+          left: `clamp(10px, ${pct}%, calc(100% - 10px))`,
+          title: `${emoji} v. ${v}/${a}`
+        };
+      });
   });
 
   readonly doneSurahName = computed(() => {
@@ -394,7 +444,7 @@ export class StudyModalComponent {
     return n ? getSurah(n)?.nameFr ?? '' : '';
   });
 
-  // Union of all completed surahs across users.
+  // Union des sourates terminées (tous les membres visibles).
   private readonly completedSet = computed(() => {
     const set = new Set<number>();
     for (const u of this.allUsers()) {
@@ -403,11 +453,15 @@ export class StudyModalComponent {
     return set;
   });
 
-  // surahNumber -> ownerUserId (users with a surah in progress).
-  private readonly takenBy = computed(() => {
-    const map = new Map<number, string>();
+  // Sourate en cours -> emojis des membres (max 3 affichés). En cours prime sur terminée.
+  private readonly inProgressEmojis = computed(() => {
+    const map = new Map<number, string[]>();
     for (const u of this.allUsers()) {
-      if (u.studySurah) map.set(u.studySurah, u.id);
+      if (!u.studySurah) continue;
+      const em = this.animalsByUserId()[u.id] || '?';
+      const list = map.get(u.studySurah);
+      if (list) { if (list.length < 3) list.push(em); }
+      else map.set(u.studySurah, [em]);
     }
     return map;
   });
@@ -416,21 +470,19 @@ export class StudyModalComponent {
     this.verse.set(this.currentUser()?.studyVerse ?? 0);
   }
 
-  surahState(n: number): SurahState {
-    if (this.completedSet().has(n)) return 'completed';
-    const owner = this.takenBy().get(n);
-    if (owner) return owner === this.currentUserId() ? 'mine' : 'taken';
+  selState(n: number): SelState {
+    if (this.inProgressEmojis().has(n)) return 'prog';
+    if (this.completedSet().has(n)) return 'done';
     return 'free';
   }
 
-  ownerAnimal(n: number): string {
-    const owner = this.takenBy().get(n);
-    if (!owner) return '';
-    return this.animalsByUserId()[owner] || '?';
+  progEmojis(n: number): string {
+    return (this.inProgressEmojis().get(n) ?? []).join('');
   }
 
+  // Sélection d'une sourate libre OU « rejoindre » une sourate en cours.
   pickSurah(n: number): void {
-    if (this.surahState(n) !== 'free') return;
+    if (this.selState(n) === 'done') return;
     this.localSurah.set(n);
     this.verse.set(Math.max(1, this.progressFor(n)));
     this.forceSelector.set(false);
@@ -447,8 +499,9 @@ export class StudyModalComponent {
     this.verse.set(next);
   }
 
-  onSelectChange(event: Event): void {
-    this.verse.set(+(event.target as HTMLSelectElement).value);
+  decrement(): void {
+    const start = Math.max(1, this.minVerse());
+    this.verse.set(Math.max(start, this.verse() - 1));
   }
 
   validate(): void {

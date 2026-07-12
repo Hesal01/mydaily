@@ -265,7 +265,7 @@ interface CompletionItem {
       @if (showStudyModal()) {
         <app-study-modal
           [currentUser]="currentUserObj()"
-          [allUsers]="users()"
+          [allUsers]="visibleUsers()"
           [animalsByUserId]="animalsByUserId()"
           [currentUserId]="currentUserId()"
           [studyDoneToday]="selectedDateUserCompletions().study"

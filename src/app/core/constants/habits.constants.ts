@@ -50,7 +50,7 @@ export const HABITS: readonly HabitConfig[] = [
     icon: 'book-open-text',
     name: 'Étude',
     description: 'Étudier les versets de ma sourate',
-    color: '#ec4899'
+    color: '#d97706'
   }
 ] as const;
 
