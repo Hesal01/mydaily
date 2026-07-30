@@ -60,6 +60,15 @@ export function getHabitConfig(id: HabitId): HabitConfig | undefined {
   return HABITS.find(h => h.id === id);
 }
 
+/**
+ * Un badge identifie une personne dans la grille : soit des initiales définies
+ * par le salon, soit l'emoji animal par défaut. Les deux ne se rendent pas
+ * pareil — du texte a besoin d'être plus petit et gras qu'un emoji.
+ */
+export function isInitialsBadge(badge: string): boolean {
+  return /^[A-Za-z]/.test(badge);
+}
+
 // Animal emojis assigned per user index (kept as emoji, not Phosphor)
 export const USER_ICONS: readonly string[] = [
   '🦥',

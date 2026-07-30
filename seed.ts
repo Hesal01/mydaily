@@ -31,8 +31,10 @@ async function seed() {
 
   for (const user of users) {
     await setDoc(doc(db, 'users', user.id), {
+      salonIds: ['salon_1'],
       token: user.token,
-      displayOrder: user.displayOrder
+      displayOrder: user.displayOrder,
+      animalIndex: user.displayOrder - 1
     });
     console.log(`✓ ${user.id} créé`);
   }

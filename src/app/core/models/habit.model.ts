@@ -25,6 +25,12 @@ export interface RawHabitCompletions {
 export interface HabitDay {
   id: string;
   userId: string;
+  /**
+   * Salons où cette journée est visible : les appartenances de la personne au
+   * moment de l'écriture. Une personne dans deux salons coche une fois et sa
+   * journée apparaît dans les deux grilles.
+   */
+  salonIds: string[];
   date: string;
   completions: HabitCompletions;
   updatedAt?: Date;

@@ -1,10 +1,11 @@
 import { Component, input, computed, signal } from '@angular/core';
 import { User } from '../../../core/models/user.model';
 import { SURAHS, TOTAL_SURAHS } from '../../../core/constants/surahs.constants';
+import { isInitialsBadge } from '../../../core/constants/habits.constants';
 
 interface StudyRow {
   userId: string;
-  animal: string;
+  badge: string;
   nameFr: string;
   surah: number;
   verse: number;
@@ -70,7 +71,7 @@ interface Picked {
             @case ('gather') {
               <div class="seg prog gather" [class.mine]="seg.mine" [style.flex]="seg.flex" [attr.title]="seg.title">
                 <span class="dpack">
-                  @for (em of seg.packEmojis; track $index) { <span class="pem">{{ em }}</span> }
+                  @for (em of seg.packEmojis; track $index) { <span class="pem" [class.initials]="isInitials(em)">{{ em }}</span> }
                   <span class="pplus num">+{{ seg.packPlus }}</span>
                 </span>
                 @if (seg.showName) { <span class="dname">{{ seg.nameFr }}</span> }
@@ -81,7 +82,7 @@ interface Picked {
                 @for (lane of seg.lanes; track $index) {
                   <span class="dlane">
                     <span class="dtrace" [class.me]="lane.mine" [style.width.%]="lane.pct"></span>
-                    <span class="drider" [style.left]="lane.riderLeft">{{ lane.emoji }}</span>
+                    <span class="drider" [class.initials]="isInitials(lane.emoji)" [style.left]="lane.riderLeft">{{ lane.emoji }}</span>
                   </span>
                 }
                 @if (seg.showName) { <span class="dname">{{ seg.nameFr }}</span> }
@@ -106,7 +107,7 @@ interface Picked {
         <div class="crew">
           @for (row of rows(); track row.userId) {
             <div class="crow" [class.me]="row.mine">
-              <span class="em">{{ row.animal }}</span>
+              <span class="em" [class.initials]="isInitials(row.badge)">{{ row.badge }}</span>
               <span class="cn">{{ row.nameFr }}</span>
               <span class="cbar"><i [style.width.%]="row.pct"></i></span>
               <span class="cv num">v. {{ row.verse }}/{{ row.ayahs }}</span>
@@ -231,6 +232,10 @@ interface Picked {
     .dpack { position: relative; z-index: 1; display: flex; align-items: center; }
     .dpack .pem { font-size: 14px; line-height: 1; margin-left: -5px; }
     .dpack .pem:first-child { margin-left: 0; }
+    /* Badges en initiales : du texte a besoin d'être plus petit et gras qu'un emoji. */
+    .drider.initials, .dpack .pem.initials { font-size: 10px; font-weight: 700; }
+    .dpack .pem.initials { margin-left: 1px; }
+    .crow .em.initials { font-size: 12px; font-weight: 700; }
     .pplus {
       font-size: 10px;
       font-weight: 700;
@@ -336,8 +341,9 @@ interface Picked {
 })
 export class StudyProgressComponent {
   readonly users = input.required<User[]>();
-  readonly animalsByUserId = input.required<Record<string, string>>();
+  readonly badgesByUserId = input.required<Record<string, string>>();
   readonly currentUserId = input.required<string | null>();
+  readonly isInitials = isInitialsBadge;
 
   readonly total = TOTAL_SURAHS;
 
@@ -376,7 +382,7 @@ export class StudyProgressComponent {
       const verse = u.studyVerse ?? 0;
       const pct = ayahs > 0 ? Math.round((verse / ayahs) * 100) : 0;
       const lane: Lane = {
-        emoji: this.animalsByUserId()[u.id] || '?',
+        emoji: this.badgesByUserId()[u.id] || '?',
         verse,
         pct,
         mine: u.id === meId,
@@ -444,7 +450,7 @@ export class StudyProgressComponent {
         const verse = u.studyVerse ?? 0;
         return {
           userId: u.id,
-          animal: this.animalsByUserId()[u.id] || '?',
+          badge: this.badgesByUserId()[u.id] || '?',
           nameFr: this.nameByNumber.get(surah) ?? '',
           surah,
           verse,

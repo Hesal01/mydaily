@@ -4,7 +4,9 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { HabitDay, HabitId, HabitCompletions, RawHabitCompletions, createEmptyCompletions, normalizeCompletions } from '../models/habit.model';
 import { User } from '../models/user.model';
+import { DEFAULT_SALON_ID } from '../models/salon.model';
 import { DateService } from './date.service';
+import { AuthService } from './auth.service';
 import { HABITS } from '../constants/habits.constants';
 
 export interface DailyStat {
@@ -18,18 +20,36 @@ export interface DailyStat {
 export class HabitService {
   private firestore = inject(Firestore);
   private dateService = inject(DateService);
+  private auth = inject(AuthService);
 
-  getAllUsers(): Observable<User[]> {
+  /**
+   * Salons de la personne, estampillés sur chaque journée écrite : c'est ce qui
+   * rend une même journée visible dans toutes ses grilles à la fois.
+   */
+  private get salonIds(): string[] {
+    const ids = this.auth.salonIds();
+    return ids.length > 0 ? ids : [DEFAULT_SALON_ID];
+  }
+
+  /**
+   * Les membres du salon uniquement.
+   *
+   * Le tri par `displayOrder` est fait côté client : combiné au filtre salon
+   * il demanderait un index composite, pour une poignée de documents.
+   */
+  getAllUsers(salonId: string): Observable<User[]> {
     return new Observable<User[]>(subscriber => {
       const usersRef = collection(this.firestore, 'users');
-      const q = query(usersRef, orderBy('displayOrder', 'asc'));
+      const q = query(usersRef, where('salonIds', 'array-contains', salonId));
 
       const unsubscribe = onSnapshot(q,
         (snapshot) => {
-          const users = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          } as User));
+          const users = snapshot.docs
+            .map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            } as User))
+            .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
           subscriber.next(users);
         },
         (error) => subscriber.error(error)
@@ -39,7 +59,8 @@ export class HabitService {
     });
   }
 
-  getAllHabitsRealtime(): Observable<HabitDay[]> {
+  /** Les habitudes visibles dans ce salon (index composite salonIds + date requis). */
+  getAllHabitsRealtime(salonId: string): Observable<HabitDay[]> {
     const dates = this.dateService.getLastNDays(365);
     const startDate = dates[0];
     const endDate = dates[dates.length - 1];
@@ -48,6 +69,7 @@ export class HabitService {
       const habitsRef = collection(this.firestore, 'habits');
       const q = query(
         habitsRef,
+        where('salonIds', 'array-contains', salonId),
         where('date', '>=', startDate),
         where('date', '<=', endDate),
         orderBy('date', 'asc')
@@ -60,6 +82,7 @@ export class HabitService {
             return {
               id: doc.id,
               userId: data['userId'],
+              salonIds: data['salonIds'] ?? [],
               date: data['date'],
               completions: normalizeCompletions(data['completions'] as RawHabitCompletions || {}),
               updatedAt: data['updatedAt']
@@ -98,6 +121,7 @@ export class HabitService {
 
     await setDoc(docRef, {
       userId,
+      salonIds: this.salonIds,
       date,
       completions: firestoreCompletions,
       updatedAt: serverTimestamp()
@@ -134,6 +158,7 @@ export class HabitService {
     const docRef = doc(this.firestore, 'habits', docId);
     await setDoc(docRef, {
       userId,
+      salonIds: this.salonIds,
       date,
       completions: {
         ...currentCompletions,
@@ -164,6 +189,7 @@ export class HabitService {
     const habitDocRef = doc(this.firestore, 'habits', `${date}_${userId}`);
     await setDoc(habitDocRef, {
       userId,
+      salonIds: this.salonIds,
       date,
       completions: {
         ...currentCompletions,
@@ -191,6 +217,7 @@ export class HabitService {
     const habitDocRef = doc(this.firestore, 'habits', `${date}_${userId}`);
     await setDoc(habitDocRef, {
       userId,
+      salonIds: this.salonIds,
       date,
       completions: {
         ...currentCompletions,

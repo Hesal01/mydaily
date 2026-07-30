@@ -1,5 +1,5 @@
 import { Component, input, signal, computed, inject } from '@angular/core';
-import { HABITS } from '../../../core/constants/habits.constants';
+import { HABITS, isInitialsBadge } from '../../../core/constants/habits.constants';
 import { HabitDay, HabitId } from '../../../core/models/habit.model';
 import { User } from '../../../core/models/user.model';
 import { HabitStatsService, LeaderRow } from '../../../core/services/habit-stats.service';
@@ -56,7 +56,7 @@ type Mode = 'total' | 'pages' | 'quran' | HabitId;
                   <span class="rank-n">{{ i + 1 }}</span>
                 }
               </div>
-              <div class="animal">{{ animalFor(row.userId) }}</div>
+              <div class="badge" [class.initials]="isInitials(badgeFor(row.userId))">{{ badgeFor(row.userId) }}</div>
               <div class="bar-wrap">
                 <div class="bar-fill" [style.width.%]="row.value > 0 ? (row.value / maxValue()) * 100 : 0"
                      [style.background]="barColor()"></div>
@@ -180,9 +180,14 @@ type Mode = 'total' | 'pages' | 'quran' | HabitId;
     .medal {
       font-size: 16px;
     }
-    .animal {
+    .badge {
       font-size: 20px;
       text-align: center;
+    }
+    .badge.initials {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
     }
     .bar-wrap {
       height: 12px;
@@ -211,7 +216,7 @@ export class StatsLeaderboardComponent {
 
   readonly habits$ = input.required<HabitDay[]>();
   readonly users = input.required<User[]>();
-  readonly animalsByUserId = input.required<Record<string, string>>();
+  readonly badgesByUserId = input.required<Record<string, string>>();
   readonly currentUserId = input.required<string | null>();
 
   readonly habits = HABITS;
@@ -254,9 +259,11 @@ export class StatsLeaderboardComponent {
     this.mode.set(m);
   }
 
-  animalFor(userId: string): string {
-    return this.animalsByUserId()[userId] ?? '?';
+  badgeFor(userId: string): string {
+    return this.badgesByUserId()[userId] ?? '?';
   }
+
+  readonly isInitials = isInitialsBadge;
 
   barColor(): string {
     const m = this.mode();

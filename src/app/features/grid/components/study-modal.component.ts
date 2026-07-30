@@ -1,6 +1,7 @@
 import { Component, input, output, signal, computed } from '@angular/core';
 import { User } from '../../../core/models/user.model';
 import { SURAHS, getSurah } from '../../../core/constants/surahs.constants';
+import { isInitialsBadge } from '../../../core/constants/habits.constants';
 
 type SelState = 'free' | 'prog' | 'done';
 
@@ -73,9 +74,9 @@ interface CoStudent {
           <div class="vtrack">
             <span class="vfill" [style.width.%]="fillPct()"></span>
             @for (c of coStudents(); track c.title) {
-              <span class="vrider" [style.left]="c.left" [attr.title]="c.title">{{ c.emoji }}</span>
+              <span class="vrider" [class.initials]="isInitials(c.emoji)" [style.left]="c.left" [attr.title]="c.title">{{ c.emoji }}</span>
             }
-            <span class="vrider me" [style.left]="myRiderLeft()" [attr.title]="myTitle()">{{ myEmoji() }}</span>
+            <span class="vrider me" [class.initials]="isInitials(myEmoji())" [style.left]="myRiderLeft()" [attr.title]="myTitle()">{{ myEmoji() }}</span>
           </div>
 
           <div class="chips">
@@ -185,6 +186,7 @@ interface CoStudent {
       pointer-events: none;
     }
     .vrider.me { z-index: 2; }
+    .vrider.initials { font-size: 11px; font-weight: 700; }
     .chips {
       display: flex;
       justify-content: center;
@@ -361,9 +363,10 @@ interface CoStudent {
 export class StudyModalComponent {
   readonly currentUser = input<User | null>(null);
   readonly allUsers = input<User[]>([]);
-  readonly animalsByUserId = input<Record<string, string>>({});
+  readonly badgesByUserId = input<Record<string, string>>({});
   readonly currentUserId = input<string | null>(null);
   readonly studyDoneToday = input<boolean>(false);
+  readonly isInitials = isInitialsBadge;
 
   readonly selectSurah = output<number>();
   readonly markVerse = output<{ surah: number; verse: number }>();
@@ -413,7 +416,7 @@ export class StudyModalComponent {
 
   readonly myEmoji = computed(() => {
     const id = this.currentUserId();
-    return (id ? this.animalsByUserId()[id] : '') || '🙂';
+    return (id ? this.badgesByUserId()[id] : '') || '?';
   });
   readonly myRiderLeft = computed(() => `clamp(10px, ${this.fillPct()}%, calc(100% - 10px))`);
   readonly myTitle = computed(() => `${this.myEmoji()} v. ${this.verse()}/${this.ayahs()}`);
@@ -429,7 +432,7 @@ export class StudyModalComponent {
       .map(u => {
         const v = u.studyVerse ?? 0;
         const pct = a > 0 ? Math.round((v / a) * 100) : 0;
-        const emoji = this.animalsByUserId()[u.id] || '?';
+        const emoji = this.badgesByUserId()[u.id] || '?';
         return {
           emoji,
           verse: v,
@@ -458,7 +461,7 @@ export class StudyModalComponent {
     const map = new Map<number, string[]>();
     for (const u of this.allUsers()) {
       if (!u.studySurah) continue;
-      const em = this.animalsByUserId()[u.id] || '?';
+      const em = this.badgesByUserId()[u.id] || '?';
       const list = map.get(u.studySurah);
       if (list) { if (list.length < 3) list.push(em); }
       else map.set(u.studySurah, [em]);
@@ -477,7 +480,9 @@ export class StudyModalComponent {
   }
 
   progEmojis(n: number): string {
-    return (this.inProgressEmojis().get(n) ?? []).join('');
+    const badges = this.inProgressEmojis().get(n) ?? [];
+    // Les emojis se collent en grappe ; des initiales collées seraient illisibles.
+    return badges.join(isInitialsBadge(badges[0] ?? '') ? ' ' : '');
   }
 
   // Sélection d'une sourate libre OU « rejoindre » une sourate en cours.

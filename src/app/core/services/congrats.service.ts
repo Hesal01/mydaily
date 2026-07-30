@@ -2,10 +2,13 @@ import { Injectable, inject } from '@angular/core';
 import { Firestore, collection, query, where, onSnapshot, doc, setDoc, serverTimestamp, increment } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
 import { Congrats } from '../models/congrats.model';
+import { DEFAULT_SALON_ID } from '../models/salon.model';
+import { AuthService } from './auth.service';
 
 @Injectable({ providedIn: 'root' })
 export class CongratsService {
   private firestore = inject(Firestore);
+  private auth = inject(AuthService);
 
   /**
    * Send a congratulation. The deterministic doc id keeps a single doc per
@@ -19,6 +22,7 @@ export class CongratsService {
     return setDoc(docRef, {
       from,
       to,
+      salonId: this.auth.salonId() ?? DEFAULT_SALON_ID,
       date,
       emoji,
       seen: false,
@@ -35,14 +39,15 @@ export class CongratsService {
   }
 
   /**
-   * Live stream of every congratulation for a given day.
-   * Single equality filter -> no composite index required.
+   * Live stream of every congratulation of the salon for a given day.
+   * Equality filters only -> Firestore fusionne les index simples, aucun index
+   * composite à créer.
    * Drives both the per-user count badges and the recipient's live animation.
    */
-  getCongratsForDate(date: string): Observable<Congrats[]> {
+  getCongratsForDate(date: string, salonId: string): Observable<Congrats[]> {
     return new Observable<Congrats[]>(subscriber => {
       const ref = collection(this.firestore, 'congratulations');
-      const q = query(ref, where('date', '==', date));
+      const q = query(ref, where('salonId', '==', salonId), where('date', '==', date));
 
       const unsubscribe = onSnapshot(q,
         (snapshot) => {

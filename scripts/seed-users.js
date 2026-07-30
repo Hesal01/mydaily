@@ -1,6 +1,9 @@
 /**
  * Script pour initialiser les utilisateurs dans Firebase
  *
+ * NOTE: pour créer un nouveau groupe, utilise scripts/create-salon.js —
+ * ce script-ci ne (re)sème que le salon d'origine.
+ *
  * INSTRUCTIONS:
  * 1. Va sur https://console.firebase.google.com
  * 2. Crée un nouveau projet (ou utilise un existant)
@@ -11,16 +14,7 @@
  * 7. Run: node scripts/seed-users.js
  */
 
-const admin = require('firebase-admin');
-
-// Charge la clé de service (à télécharger depuis Firebase Console)
-const serviceAccount = require('../mydaily-8d939-firebase-adminsdk-fbsvc-36b50733bb.json');
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
-
-const db = admin.firestore();
+const { admin, db, fail } = require('./lib/admin');
 
 // Génère un token aléatoire
 function generateToken() {
@@ -33,10 +27,13 @@ function generateToken() {
 }
 
 // 10 utilisateurs avec tokens uniques
+const SALON_ID = 'salon_1';
+
 const users = Array.from({ length: 10 }, (_, i) => ({
   id: `user_${i + 1}`,
   token: generateToken(),
-  displayOrder: i + 1
+  displayOrder: i + 1,
+  animalIndex: i
 }));
 
 async function seedUsers() {
@@ -44,8 +41,10 @@ async function seedUsers() {
 
   for (const user of users) {
     await db.collection('users').doc(user.id).set({
+      salonIds: [SALON_ID],
       token: user.token,
       displayOrder: user.displayOrder,
+      animalIndex: user.animalIndex,
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
@@ -59,7 +58,4 @@ async function seedUsers() {
 
 seedUsers()
   .then(() => process.exit(0))
-  .catch(err => {
-    console.error('Error:', err);
-    process.exit(1);
-  });
+  .catch(fail);

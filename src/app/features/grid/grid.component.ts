@@ -1,5 +1,6 @@
 import { Component, inject, computed, effect, signal, OnDestroy } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toSignal, toObservable } from '@angular/core/rxjs-interop';
+import { of, switchMap } from 'rxjs';
 import { HabitButtonsComponent } from './components/habit-buttons.component';
 import { QuranModalComponent } from './components/quran-modal.component';
 import { QuranProgressComponent } from './components/quran-progress.component';
@@ -22,9 +23,10 @@ import { HapticService } from '../../core/services/haptic.service';
 import { ToastService } from '../../core/services/toast.service';
 import { CamelWatcherService } from '../../core/services/camel-watcher.service';
 import { CongratsService } from '../../core/services/congrats.service';
+import { SalonService } from '../../core/services/salon.service';
 import { HabitId, HabitCompletions, createEmptyCompletions } from '../../core/models/habit.model';
 import { Congrats } from '../../core/models/congrats.model';
-import { HABITS, USER_ICONS, getHabitConfig } from '../../core/constants/habits.constants';
+import { HABITS, USER_ICONS, getHabitConfig, isInitialsBadge } from '../../core/constants/habits.constants';
 import { getSurah } from '../../core/constants/surahs.constants';
 import { CelebrationOverlayComponent, CelebrationBurst, CelebrationParticle } from './components/celebration-overlay.component';
 
@@ -49,6 +51,19 @@ interface CompletionItem {
   ],
   template: `
     <div class="container">
+      <!-- Sélecteur de salon : n'apparaît que pour qui en a plusieurs. Hors du
+           bloc de chargement, sinon il disparaît le temps de chaque bascule. -->
+      @if (mySalons().length > 1) {
+        <div class="salon-bar">
+          @for (salon of mySalons(); track salon.id) {
+            <button
+              class="salon-chip"
+              [class.active]="salon.id === currentSalonId()"
+              (click)="switchSalon(salon.id)"
+            >{{ salon.name }}</button>
+          }
+        </div>
+      }
       @if (loading()) {
         <div class="loading">
           <div class="spinner"></div>
@@ -83,11 +98,15 @@ interface CompletionItem {
                     }
                   </div>
 
-                  <!-- Animals row (below filters) -->
-                  <div class="animal-header" [style.grid-template-columns]="'repeat(' + visibleUsers().length + ', 1fr)'">
+                  <!-- Badges row (below filters) -->
+                  <div class="badge-header" [style.grid-template-columns]="'repeat(' + visibleUsers().length + ', 1fr)'">
                     @for (user of visibleUsers(); track user.id) {
-                      <div class="animal" [class.mine]="user.id === currentUserId()">
-                        {{ animalsByUserId()[user.id] || '?' }}
+                      <div
+                        class="badge"
+                        [class.mine]="user.id === currentUserId()"
+                        [class.initials]="isInitials(badgesByUserId()[user.id])"
+                      >
+                        {{ badgesByUserId()[user.id] || '?' }}
                       </div>
                     }
                   </div>
@@ -185,7 +204,7 @@ interface CompletionItem {
               <div class="calendar-zone">
                 <app-quran-progress
                   [users]="visibleUsers()"
-                  [animalsByUserId]="animalsByUserId()"
+                  [badgesByUserId]="badgesByUserId()"
                   [currentUserId]="currentUserId()"
                 />
               </div>
@@ -196,7 +215,7 @@ interface CompletionItem {
               <div class="calendar-zone">
                 <app-study-progress
                   [users]="visibleUsers()"
-                  [animalsByUserId]="animalsByUserId()"
+                  [badgesByUserId]="badgesByUserId()"
                   [currentUserId]="currentUserId()"
                 />
               </div>
@@ -236,7 +255,7 @@ interface CompletionItem {
         <app-study-modal
           [currentUser]="currentUserObj()"
           [allUsers]="visibleUsers()"
-          [animalsByUserId]="animalsByUserId()"
+          [badgesByUserId]="badgesByUserId()"
           [currentUserId]="currentUserId()"
           [studyDoneToday]="selectedDateUserCompletions().study"
           (selectSurah)="onStudySelectSurah($event)"
@@ -300,6 +319,33 @@ interface CompletionItem {
     }
     .graph { width: 100%; }
 
+    .salon-bar {
+      display: flex;
+      gap: 6px;
+      padding: 10px 16px 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      flex-shrink: 0;
+    }
+    .salon-bar::-webkit-scrollbar { display: none; }
+    .salon-chip {
+      flex-shrink: 0;
+      padding: 5px 12px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--color-border);
+      background: transparent;
+      color: var(--color-text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background var(--duration-base) ease, color var(--duration-base) ease;
+    }
+    .salon-chip.active {
+      background: var(--color-text);
+      border-color: var(--color-text);
+      color: var(--color-bg);
+    }
+
     .filter-bar {
       display: flex;
       gap: 6px;
@@ -334,7 +380,7 @@ interface CompletionItem {
     .fchip-icon { font-size: 13px; line-height: 1; }
     .fchip-label { line-height: 1; }
 
-    .animal-header {
+    .badge-header {
       display: grid;
       gap: 4px;
       margin-bottom: 8px;
@@ -344,14 +390,20 @@ interface CompletionItem {
       padding-bottom: 4px;
       z-index: 10;
     }
-    .animal {
+    .badge {
       text-align: center;
       font-size: 22px;
       line-height: 1;
       opacity: 0.55;
       transition: transform var(--duration-base) var(--spring), opacity var(--duration-base) ease;
     }
-    .animal.mine {
+    .badge.initials {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      padding: 4px 0;
+    }
+    .badge.mine {
       opacity: 1;
       transform: scale(1.15);
     }
@@ -568,8 +620,17 @@ export class GridComponent implements OnDestroy {
   private toastService = inject(ToastService);
   private camelWatcher = inject(CamelWatcherService);
   private congratsService = inject(CongratsService);
+  private salonService = inject(SalonService);
 
   readonly currentUserId = this.authService.userId;
+  readonly currentSalonId = this.authService.salonId;
+  /**
+   * Le salon n'est connu qu'après la lecture du stockage partagé, donc après la
+   * construction du composant : les flux de données sont rebranchés dessus au
+   * lieu d'être souscrits une fois pour toutes.
+   */
+  private readonly salonId$ = toObservable(this.currentSalonId);
+  readonly mySalons = this.salonService.mySalons;
   readonly today = this.dateService.getToday();
   readonly habits = HABITS;
   readonly filteredHabit = signal<HabitId | null>(null);
@@ -588,9 +649,18 @@ export class GridComponent implements OnDestroy {
   readonly selectedDate = signal<string>(this.today);
   readonly dates = computed(() => this.dateService.getWeekForDate(this.selectedDate()));
 
-  readonly users = toSignal(this.habitService.getAllUsers(), { initialValue: [] });
-  readonly habits$ = toSignal(this.habitService.getAllHabitsRealtime(), { initialValue: [] });
-  readonly todayCongrats = toSignal(this.congratsService.getCongratsForDate(this.today), { initialValue: [] as Congrats[] });
+  readonly users = toSignal(
+    this.salonId$.pipe(switchMap(salonId => salonId ? this.habitService.getAllUsers(salonId) : of([]))),
+    { initialValue: [] }
+  );
+  readonly habits$ = toSignal(
+    this.salonId$.pipe(switchMap(salonId => salonId ? this.habitService.getAllHabitsRealtime(salonId) : of([]))),
+    { initialValue: [] }
+  );
+  readonly todayCongrats = toSignal(
+    this.salonId$.pipe(switchMap(salonId => salonId ? this.congratsService.getCongratsForDate(this.today, salonId) : of([] as Congrats[]))),
+    { initialValue: [] as Congrats[] }
+  );
 
   readonly visibleUsers = computed(() => {
     const all = this.users();
@@ -600,10 +670,13 @@ export class GridComponent implements OnDestroy {
     return all.filter(u => u.id === meId || !u.privacyMode);
   });
 
-  readonly animalsByUserId = computed(() => {
+  readonly badgesByUserId = computed(() => {
     const map: Record<string, string> = {};
     this.users().forEach((u, i) => {
-      map[u.id] = USER_ICONS[i] ?? '?';
+      // Les initiales du salon priment ; sinon l'emoji animal. `animalIndex`
+      // fait foi quand il est là : c'est lui que lisent aussi les Cloud
+      // Functions, donc le badge des notifs colle à celui de la grille.
+      map[u.id] = u.label?.trim() || USER_ICONS[u.animalIndex ?? i] || '?';
     });
     return map;
   });
@@ -736,6 +809,18 @@ export class GridComponent implements OnDestroy {
   setFilter(habitId: HabitId | null): void {
     this.hapticService.tap();
     this.filteredHabit.set(habitId);
+  }
+
+  /**
+   * Bascule la grille sur un autre salon. Les habitudes sont les mêmes d'un
+   * salon à l'autre, mais l'overlay optimiste porte sur les cellules affichées :
+   * on le vide pour repartir sur les données du salon rejoint.
+   */
+  switchSalon(salonId: string): void {
+    if (salonId === this.currentSalonId()) return;
+    this.hapticService.tap();
+    this.optimisticOverlay.set({});
+    this.authService.switchSalon(salonId);
   }
 
   cellColor(userId: string, date: string): string {
@@ -1151,7 +1236,7 @@ export class GridComponent implements OnDestroy {
 
     this.hapticService.success();
     this.spawnBurstAtCell(target.userId, target.date);
-    this.showCongratsMessage(`Bravo envoyé à ${this.animalFor(target.userId)} ! 👏`);
+    this.showCongratsMessage(`Bravo envoyé à ${this.badgeFor(target.userId)} ! 👏`);
 
     try {
       await this.congratsService.sendCongrats(from, target.userId, target.date);
@@ -1163,7 +1248,7 @@ export class GridComponent implements OnDestroy {
   private celebrateForReceiver(c: Congrats): void {
     this.hapticService.success();
     this.spawnBurstAtCell(c.to, c.date);
-    this.showCongratsMessage(`${this.animalFor(c.from)} t'a félicité ! 👏`);
+    this.showCongratsMessage(`${this.badgeFor(c.from)} t'a félicité ! 👏`);
   }
 
   private spawnBurstAtCell(userId: string, date: string): void {
@@ -1212,8 +1297,10 @@ export class GridComponent implements OnDestroy {
     return particles;
   }
 
-  private animalFor(userId: string): string {
-    return this.animalsByUserId()[userId] || '🐾';
+  readonly isInitials = isInitialsBadge;
+
+  private badgeFor(userId: string): string {
+    return this.badgesByUserId()[userId] || '?';
   }
 
   private showCongratsMessage(text: string): void {

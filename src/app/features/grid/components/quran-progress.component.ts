@@ -1,5 +1,6 @@
 import { Component, input } from '@angular/core';
 import { User } from '../../../core/models/user.model';
+import { isInitialsBadge } from '../../../core/constants/habits.constants';
 
 @Component({
   selector: 'app-quran-progress',
@@ -10,7 +11,7 @@ import { User } from '../../../core/models/user.model';
       <div class="users-list">
         @for (user of users(); track user.id) {
           <div class="user-row" [class.mine]="user.id === currentUserId()">
-            <span class="animal">{{ animalsByUserId()[user.id] || '?' }}</span>
+            <span class="badge" [class.initials]="isInitials(badgesByUserId()[user.id])">{{ badgesByUserId()[user.id] || '?' }}</span>
             <div class="bar-wrapper">
               @if ((user.quranCycle || 0) > 0) {
                 <div class="cycle-dots">
@@ -59,7 +60,7 @@ import { User } from '../../../core/models/user.model';
     .user-row.mine {
       opacity: 1;
     }
-    .animal {
+    .badge {
       font-size: 22px;
       line-height: 1;
       flex-shrink: 0;
@@ -67,7 +68,12 @@ import { User } from '../../../core/models/user.model';
       text-align: center;
       color: var(--color-text);
     }
-    .user-row.mine .animal {
+    .badge.initials {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .user-row.mine .badge {
       color: var(--color-success-dark);
     }
     .bar-wrapper {
@@ -110,8 +116,9 @@ import { User } from '../../../core/models/user.model';
 })
 export class QuranProgressComponent {
   readonly users = input.required<User[]>();
-  readonly animalsByUserId = input.required<Record<string, string>>();
+  readonly badgesByUserId = input.required<Record<string, string>>();
   readonly currentUserId = input.required<string | null>();
+  readonly isInitials = isInitialsBadge;
 
   getPercentage(page: number): number {
     return Math.round((page / 604) * 100);

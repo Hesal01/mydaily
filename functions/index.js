@@ -87,23 +87,64 @@ exports.onHabitUpdate = functions.firestore
     return null;
   });
 
+const DEFAULT_SALON_ID = 'salon_1';
+
+/** Appartenances d'un doc user, tolérant au format d'avant les salons multiples. */
+function readSalonIds(userData) {
+  if (Array.isArray(userData?.salonIds) && userData.salonIds.length > 0) return userData.salonIds;
+  if (typeof userData?.salonId === 'string') return [userData.salonId];
+  return [DEFAULT_SALON_ID];
+}
+
 /**
- * Helper function to send batched notification
+ * Badge d'une personne, tel qu'affiché dans la grille : ses initiales si le
+ * salon en utilise, sinon son emoji animal. `animalIndex` fait foi ; on ne
+ * retombe sur le numéro dans l'id que pour les docs du salon d'origine qui
+ * n'ont pas encore le champ.
+ */
+function badgeFor(userData, userId) {
+  const label = userData && userData.label && String(userData.label).trim();
+  if (label) return label;
+  const index = Number.isInteger(userData?.animalIndex)
+    ? userData.animalIndex
+    : parseInt(String(userId).replace('user_', ''), 10) - 1;
+  return ANIMALS[index] || '🐾';
+}
+
+/**
+ * Helper function to send batched notification.
+ * Ne notifie que les salons de la personne : un salon ne doit jamais apprendre
+ * l'activité d'un autre, même par une notif push. Quelqu'un présent dans
+ * plusieurs salons prévient les membres de chacun — sa journée y est visible
+ * partout — et les tokens sont dédupliqués pour ceux qui se recroisent.
  */
 async function sendBatchedNotification(userId, habits) {
-  const userIndex = parseInt(userId.replace('user_', '')) - 1;
-  const userAnimal = ANIMALS[userIndex] || '🐾';
+  const authorDoc = await db.collection('users').doc(userId).get();
+  if (!authorDoc.exists) {
+    console.log('Unknown user, skipping:', userId);
+    return null;
+  }
+  const authorData = authorDoc.data();
+  const salonIds = readSalonIds(authorData);
+  const userBadge = badgeFor(authorData, userId);
 
-  // Get all FCM tokens from all users except the one who activated
-  const usersSnapshot = await db.collection('users').get();
-  const tokens = [];
+  // Get FCM tokens from the members of every salon, except the one who activated
+  const snapshots = await Promise.all(
+    salonIds.map(salonId =>
+      db.collection('users').where('salonIds', 'array-contains', salonId).get()
+    )
+  );
 
-  usersSnapshot.forEach(doc => {
-    const data = doc.data();
-    if (data.fcmToken && doc.id !== userId) {
-      tokens.push(data.fcmToken);
-    }
+  const tokenSet = new Set();
+  snapshots.forEach(snapshot => {
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.fcmToken && doc.id !== userId) {
+        tokenSet.add(data.fcmToken);
+      }
+    });
   });
+  const tokens = Array.from(tokenSet);
 
   if (tokens.length === 0) {
     console.log('No tokens found for user:', userId);
@@ -114,7 +155,7 @@ async function sendBatchedNotification(userId, habits) {
   const habitEmojis = habits.map(h => HABIT_EMOJIS[h]).join(' ');
   const message = {
     notification: {
-      title: `${userAnimal} a complété ${habits.length > 1 ? 'des habitudes' : 'une habitude'}!`,
+      title: `${userBadge} a complété ${habits.length > 1 ? 'des habitudes' : 'une habitude'}!`,
       body: habitEmojis
     },
     tokens: tokens
@@ -200,7 +241,20 @@ exports.onCongratsCreate = functions.firestore
     }
 
     // Get the recipient's FCM token only
-    const toDoc = await db.collection('users').doc(to).get();
+    const [fromDoc, toDoc] = await Promise.all([
+      db.collection('users').doc(from).get(),
+      db.collection('users').doc(to).get()
+    ]);
+
+    // Garde-fou : un bravo ne traverse jamais la frontière d'un salon. Les deux
+    // doivent partager au moins un salon.
+    const fromSalons = readSalonIds(fromDoc.exists ? fromDoc.data() : null);
+    const toSalons = readSalonIds(toDoc.exists ? toDoc.data() : null);
+    if (!fromSalons.some(id => toSalons.includes(id))) {
+      console.log('Cross-salon congrats, skipping', from, '->', to);
+      return null;
+    }
+
     const token = toDoc.exists ? toDoc.data().fcmToken : null;
 
     if (!token) {
@@ -208,12 +262,11 @@ exports.onCongratsCreate = functions.firestore
       return null;
     }
 
-    const fromIndex = parseInt(String(from).replace('user_', ''), 10) - 1;
-    const fromAnimal = ANIMALS[fromIndex] || '🐾';
+    const fromBadge = badgeFor(fromDoc.exists ? fromDoc.data() : null, from);
 
     const message = {
       notification: {
-        title: `${fromAnimal} t'a félicité ! ${emoji}`,
+        title: `${fromBadge} t'a félicité ! ${emoji}`,
         body: 'Bravo pour ta journée 💪'
       },
       data: {
