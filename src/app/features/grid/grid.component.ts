@@ -99,7 +99,9 @@ interface CompletionItem {
                   </div>
 
                   <!-- Badges row (below filters) -->
-                  <div class="badge-header" [style.grid-template-columns]="'repeat(' + visibleUsers().length + ', 1fr)'">
+                  <div class="badge-header"
+                       [style.grid-template-columns]="'repeat(' + visibleUsers().length + ', 1fr)'"
+                       [style.max-width]="gridMaxWidth()">
                     @for (user of visibleUsers(); track user.id) {
                       <div
                         class="badge"
@@ -112,7 +114,9 @@ interface CompletionItem {
                   </div>
 
                   <!-- Grid -->
-                  <div class="grid" [style.grid-template-columns]="'repeat(' + visibleUsers().length + ', 1fr)'">
+                  <div class="grid"
+                       [style.grid-template-columns]="'repeat(' + visibleUsers().length + ', 1fr)'"
+                       [style.max-width]="gridMaxWidth()">
                     @for (date of dates(); track date) {
                       @for (user of visibleUsers(); track user.id) {
                         <div
@@ -386,6 +390,9 @@ interface CompletionItem {
     .badge-header {
       display: grid;
       gap: 4px;
+      /* Même plafond que la grille, sinon les badges ne tombent plus en face
+         de leurs colonnes. */
+      margin-inline: auto;
       margin-bottom: 8px;
       position: sticky;
       top: 0;
@@ -414,16 +421,13 @@ interface CompletionItem {
     .grid {
       display: grid;
       gap: 4px;
-      justify-items: center;
+      /* Bornée par gridMaxWidth : ce sont les pistes qui sont plafonnées, pas
+         les cases, sinon chaque case flotterait au milieu d'une piste trop
+         large et la grille se trouerait. */
+      margin-inline: auto;
     }
     .cell {
       aspect-ratio: 1;
-      width: 100%;
-      /* Garde-fou : la largeur d'une cellule est une fraction du nombre de
-         colonnes, donc un effectif réduit (mode privé, salon à deux) la ferait
-         gonfler jusqu'à la pleine largeur. Au-delà de cette borne ce ne sont
-         plus des cases, ce sont des pavés. */
-      max-width: 56px;
       border-radius: var(--radius-xs);
       position: relative;
       transition: background-color var(--duration-base) ease, transform 0.15s ease;
@@ -685,6 +689,22 @@ export class GridComponent implements OnDestroy {
     const me = all.find(u => u.id === meId);
     if (me?.privacyMode) return [me];
     return all.filter(u => u.id === meId || !u.privacyMode);
+  });
+
+  /** Une case au-delà de cette taille n'est plus une case, c'est un pavé. */
+  private readonly CELL_MAX_PX = 56;
+  private readonly CELL_GAP_PX = 4;
+
+  /**
+   * Plafond de largeur de la grille, aligné sur le nombre de colonnes affichées.
+   * Sur un écran large — ou à effectif réduit, mode privé compris — les pistes
+   * s'étireraient sinon jusqu'à donner des cases démesurées. En dessous du
+   * plafond la grille occupe toute la largeur, comme avant.
+   */
+  readonly gridMaxWidth = computed(() => {
+    const n = this.visibleUsers().length;
+    if (n === 0) return '100%';
+    return `${n * this.CELL_MAX_PX + (n - 1) * this.CELL_GAP_PX}px`;
   });
 
   readonly badgesByUserId = computed(() => {
