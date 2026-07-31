@@ -5,6 +5,9 @@
  * journée devient visible dans toutes les grilles de ses salons. Un sélecteur
  * apparaît dans l'app dès qu'elle appartient à plus d'un salon.
  *
+ * `--label` ne vaut que pour le salon rejoint : son badge d'origine ne bouge
+ * pas ailleurs. Chaque grille identifie les gens à sa façon.
+ *
  * Par défaut son historique est repris dans le nouveau salon (les journées
  * passées y deviennent visibles). `--no-history` limite la visibilité à partir
  * d'aujourd'hui.
@@ -63,13 +66,15 @@ async function main() {
 
   console.log(`${userId} → ${salonId} ("${salonDoc.data().name}")`);
   console.log(`  salons actuels : ${current.join(', ') || '(aucun)'}`);
-  if (label) console.log(`  badge : ${label}`);
+  if (label) console.log(`  badge dans ce salon : ${label} (inchangé dans les autres)`);
   console.log(`  historique : ${NO_HISTORY ? 'non repris' : `${habitsSnapshot.size} journée(s) à reprendre`}`);
 
   if (DRY_RUN) return;
 
   const userUpdate = { salonIds: admin.firestore.FieldValue.arrayUnion(salonId) };
-  if (label) userUpdate.label = label;
+  // Badge propre au salon rejoint : la personne garde son badge d'origine dans
+  // ses autres salons (un jaguar peut devenir « MI » ici et rester 🐆 ailleurs).
+  if (label) userUpdate[`labels.${salonId}`] = label;
   await userRef.update(userUpdate);
 
   if (!NO_HISTORY && habitsSnapshot.size > 0) {

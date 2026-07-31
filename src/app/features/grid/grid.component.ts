@@ -672,11 +672,15 @@ export class GridComponent implements OnDestroy {
 
   readonly badgesByUserId = computed(() => {
     const map: Record<string, string> = {};
+    const salonId = this.currentSalonId();
     this.users().forEach((u, i) => {
-      // Les initiales du salon priment ; sinon l'emoji animal. `animalIndex`
-      // fait foi quand il est là : c'est lui que lisent aussi les Cloud
-      // Functions, donc le badge des notifs colle à celui de la grille.
-      map[u.id] = u.label?.trim() || USER_ICONS[u.animalIndex ?? i] || '?';
+      // Le badge du salon affiché prime, puis le badge global, puis l'emoji
+      // animal. Quelqu'un dans plusieurs salons peut donc être « MI » ici et
+      // rester 🐆 ailleurs. `animalIndex` fait foi quand il est là : c'est lui
+      // que lisent aussi les Cloud Functions, donc le badge des notifs colle à
+      // celui de la grille.
+      const perSalon = salonId ? u.labels?.[salonId]?.trim() : '';
+      map[u.id] = perSalon || u.label?.trim() || USER_ICONS[u.animalIndex ?? i] || '?';
     });
     return map;
   });

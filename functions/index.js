@@ -97,12 +97,15 @@ function readSalonIds(userData) {
 }
 
 /**
- * Badge d'une personne, tel qu'affiché dans la grille : ses initiales si le
- * salon en utilise, sinon son emoji animal. `animalIndex` fait foi ; on ne
- * retombe sur le numéro dans l'id que pour les docs du salon d'origine qui
- * n'ont pas encore le champ.
+ * Badge d'une personne, tel qu'affiché dans la grille du salon visé : son badge
+ * propre à ce salon, sinon son badge global, sinon son emoji animal. Une même
+ * personne peut donc s'annoncer « MI » dans un salon et 🐆 dans un autre.
+ * `animalIndex` fait foi ; on ne retombe sur le numéro dans l'id que pour les
+ * docs du salon d'origine qui n'ont pas encore le champ.
  */
-function badgeFor(userData, userId) {
+function badgeFor(userData, userId, salonId) {
+  const perSalon = salonId && userData && userData.labels && userData.labels[salonId];
+  if (perSalon && String(perSalon).trim()) return String(perSalon).trim();
   const label = userData && userData.label && String(userData.label).trim();
   if (label) return label;
   const index = Number.isInteger(userData?.animalIndex)
@@ -126,7 +129,6 @@ async function sendBatchedNotification(userId, habits) {
   }
   const authorData = authorDoc.data();
   const salonIds = readSalonIds(authorData);
-  const userBadge = badgeFor(authorData, userId);
 
   // Get FCM tokens from the members of every salon, except the one who activated
   const snapshots = await Promise.all(
@@ -135,36 +137,45 @@ async function sendBatchedNotification(userId, habits) {
     )
   );
 
-  const tokenSet = new Set();
-  snapshots.forEach(snapshot => {
+  // Le badge de l'auteur peut différer d'un salon à l'autre : on regroupe les
+  // destinataires par badge au lieu d'un multicast unique. Un token déjà vu dans
+  // un salon précédent n'est pas repris — une seule notif par personne, même
+  // pour qui partage deux salons avec l'auteur.
+  const seen = new Set();
+  const tokensByBadge = new Map();
+  snapshots.forEach((snapshot, i) => {
+    const badge = badgeFor(authorData, userId, salonIds[i]);
     snapshot.forEach(doc => {
       const data = doc.data();
-      if (data.fcmToken && doc.id !== userId) {
-        tokenSet.add(data.fcmToken);
-      }
+      if (!data.fcmToken || doc.id === userId || seen.has(data.fcmToken)) return;
+      seen.add(data.fcmToken);
+      if (!tokensByBadge.has(badge)) tokensByBadge.set(badge, []);
+      tokensByBadge.get(badge).push(data.fcmToken);
     });
   });
-  const tokens = Array.from(tokenSet);
 
-  if (tokens.length === 0) {
+  if (seen.size === 0) {
     console.log('No tokens found for user:', userId);
     return null;
   }
 
   // Build notification with all habits
   const habitEmojis = habits.map(h => HABIT_EMOJIS[h]).join(' ');
-  const message = {
-    notification: {
-      title: `${userBadge} a complété ${habits.length > 1 ? 'des habitudes' : 'une habitude'}!`,
-      body: habitEmojis
-    },
-    tokens: tokens
-  };
 
   try {
-    const response = await messaging.sendEachForMulticast(message);
-    console.log(`Sent ${response.successCount} notifications for ${userId}, ${response.failureCount} failures`);
-    return response;
+    const responses = await Promise.all(
+      Array.from(tokensByBadge, ([badge, tokens]) => messaging.sendEachForMulticast({
+        notification: {
+          title: `${badge} a complété ${habits.length > 1 ? 'des habitudes' : 'une habitude'}!`,
+          body: habitEmojis
+        },
+        tokens: tokens
+      }))
+    );
+    const successCount = responses.reduce((total, r) => total + r.successCount, 0);
+    const failureCount = responses.reduce((total, r) => total + r.failureCount, 0);
+    console.log(`Sent ${successCount} notifications for ${userId}, ${failureCount} failures`);
+    return responses;
   } catch (error) {
     console.error('Error sending batched notification:', error);
     return null;
@@ -262,7 +273,9 @@ exports.onCongratsCreate = functions.firestore
       return null;
     }
 
-    const fromBadge = badgeFor(fromDoc.exists ? fromDoc.data() : null, from);
+    // Le bravo part d'un salon précis : c'est ce badge-là que le destinataire
+    // reconnaît dans sa grille.
+    const fromBadge = badgeFor(fromDoc.exists ? fromDoc.data() : null, from, data.salonId);
 
     const message = {
       notification: {

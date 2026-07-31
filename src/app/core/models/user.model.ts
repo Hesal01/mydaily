@@ -9,8 +9,15 @@ export interface User {
   salonIds: string[];
   displayOrder: number;
   /**
+   * Badge propre à un salon, indexé par salonId. Une même personne peut porter
+   * des initiales dans un salon et rester un emoji animal dans un autre : c'est
+   * la grille qui identifie, pas la personne.
+   */
+  labels?: Record<string, string>;
+  /**
    * Badge affiché dans la grille : deux initiales (« JK »).
    * Absent = le salon utilise les emojis animaux (cf. animalIndex).
+   * `labels[salonId]` prime quand il existe.
    */
   label?: string;
   /** Index dans USER_ICONS. Stocké pour que les Cloud Functions n'aient pas à le déduire de l'id. */

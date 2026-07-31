@@ -70,9 +70,14 @@ node scripts/add-to-salon.js user_3 salon_2 --no-history   # visible à partir d
 
 Par défaut l'historique est repris : les journées passées deviennent visibles
 dans le nouveau salon. Ce qui est partagé entre ses salons : les habitudes, la
-progression de lecture et d'étude, le badge et le mode privé — tout ce qui est
-porté par la personne. Ce qui reste cloisonné : les bravos, et évidemment la
+progression de lecture et d'étude, et le mode privé — tout ce qui est porté par
+la personne. Ce qui reste cloisonné : les bravos, le badge, et évidemment la
 grille des autres membres.
+
+Le badge est propre à chaque salon (`labels[salonId]` sur le doc user, avec le
+champ `label` en repli puis l'emoji animal). La même personne peut donc être
+« MI » dans un salon et rester 🐆 dans un autre — les notifications push suivent,
+chaque salon lisant le badge qu'il affiche.
 
 ## Development server
 
