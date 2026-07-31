@@ -97,6 +97,15 @@ function readSalonIds(userData) {
 }
 
 /**
+ * Habitudes suivies par un salon, ou null s'il les suit toutes. Les salons
+ * d'avant ce champ n'ont pas `habitIds` et ne filtrent donc rien.
+ */
+function readHabitIds(salonDoc) {
+  const ids = salonDoc && salonDoc.exists ? salonDoc.data().habitIds : null;
+  return Array.isArray(ids) && ids.length > 0 ? ids : null;
+}
+
+/**
  * Badge d'une personne, tel qu'affiché dans la grille du salon visé : son badge
  * propre à ce salon, sinon son badge global, sinon son emoji animal. Une même
  * personne peut donc s'annoncer « MI » dans un salon et 🐆 dans un autre.
@@ -131,43 +140,50 @@ async function sendBatchedNotification(userId, habits) {
   const salonIds = readSalonIds(authorData);
 
   // Get FCM tokens from the members of every salon, except the one who activated
-  const snapshots = await Promise.all(
-    salonIds.map(salonId =>
-      db.collection('users').where('salonIds', 'array-contains', salonId).get()
-    )
-  );
+  const [snapshots, salonDocs] = await Promise.all([
+    Promise.all(
+      salonIds.map(salonId =>
+        db.collection('users').where('salonIds', 'array-contains', salonId).get()
+      )
+    ),
+    Promise.all(salonIds.map(salonId => db.collection('salons').doc(salonId).get()))
+  ]);
 
-  // Le badge de l'auteur peut différer d'un salon à l'autre : on regroupe les
-  // destinataires par badge au lieu d'un multicast unique. Un token déjà vu dans
-  // un salon précédent n'est pas repris — une seule notif par personne, même
-  // pour qui partage deux salons avec l'auteur.
+  // Chaque salon n'annonce que les habitudes qu'il suit : quelqu'un présent
+  // dans deux salons coche partout, mais un salon n'apprend jamais l'activité
+  // qui ne le concerne pas. Le badge de l'auteur varie lui aussi d'un salon à
+  // l'autre, d'où un regroupement par (badge, habitudes annoncées) plutôt qu'un
+  // multicast unique. Un token déjà vu dans un salon précédent n'est pas repris
+  // — une seule notif par personne, même pour qui partage deux salons.
   const seen = new Set();
-  const tokensByBadge = new Map();
+  const groups = new Map();
   snapshots.forEach((snapshot, i) => {
+    const tracked = readHabitIds(salonDocs[i]);
+    const shown = tracked ? habits.filter(h => tracked.includes(h)) : habits;
+    if (shown.length === 0) return;
+
     const badge = badgeFor(authorData, userId, salonIds[i]);
+    const key = `${badge}|${shown.join(',')}`;
     snapshot.forEach(doc => {
       const data = doc.data();
       if (!data.fcmToken || doc.id === userId || seen.has(data.fcmToken)) return;
       seen.add(data.fcmToken);
-      if (!tokensByBadge.has(badge)) tokensByBadge.set(badge, []);
-      tokensByBadge.get(badge).push(data.fcmToken);
+      if (!groups.has(key)) groups.set(key, { badge, shown, tokens: [] });
+      groups.get(key).tokens.push(data.fcmToken);
     });
   });
 
-  if (seen.size === 0) {
+  if (groups.size === 0) {
     console.log('No tokens found for user:', userId);
     return null;
   }
 
-  // Build notification with all habits
-  const habitEmojis = habits.map(h => HABIT_EMOJIS[h]).join(' ');
-
   try {
     const responses = await Promise.all(
-      Array.from(tokensByBadge, ([badge, tokens]) => messaging.sendEachForMulticast({
+      Array.from(groups.values(), ({ badge, shown, tokens }) => messaging.sendEachForMulticast({
         notification: {
-          title: `${badge} a complété ${habits.length > 1 ? 'des habitudes' : 'une habitude'}!`,
-          body: habitEmojis
+          title: `${badge} a complété ${shown.length > 1 ? 'des habitudes' : 'une habitude'}!`,
+          body: shown.map(h => HABIT_EMOJIS[h]).join(' ')
         },
         tokens: tokens
       }))

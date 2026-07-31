@@ -1,5 +1,5 @@
 import { Component, input, output, computed } from '@angular/core';
-import { HABITS } from '../../../core/constants/habits.constants';
+import { HABITS, HabitConfig } from '../../../core/constants/habits.constants';
 import { HabitCompletions, HabitId } from '../../../core/models/habit.model';
 
 @Component({
@@ -10,13 +10,13 @@ import { HabitCompletions, HabitId } from '../../../core/models/habit.model';
       <div class="info-row">
         <span class="info-date">{{ infoDate() }}</span>
         <span class="info-dot">·</span>
-        <span class="info-count" [class.full]="completedCount() === habits.length">
-          {{ completedCount() }} / {{ habits.length }} fait
+        <span class="info-count" [class.full]="completedCount() === habits().length">
+          {{ completedCount() }} / {{ habits().length }} fait
         </span>
       </div>
 
       <div class="buttons-row">
-        @for (habit of habits; track habit.id) {
+        @for (habit of habits(); track habit.id) {
           <button
             class="habit-btn"
             [class.completed]="isCompleted(habit.id)"
@@ -151,7 +151,8 @@ export class HabitButtonsComponent {
   readonly canEdit = input.required<boolean>();
   readonly infoDate = input.required<string>();
 
-  readonly habits = HABITS;
+  /** Les habitudes du salon affiché ; toutes par défaut. */
+  readonly habits = input<readonly HabitConfig[]>(HABITS);
 
   readonly toggleHabit = output<HabitId>();
 
@@ -159,7 +160,7 @@ export class HabitButtonsComponent {
 
   readonly completedCount = computed(() => {
     const c = this.completions();
-    return this.habits.reduce((n, habit) => (c[habit.id] ? n + 1 : n), 0);
+    return this.habits().reduce((n, habit) => (c[habit.id] ? n + 1 : n), 0);
   });
 
   isCompleted(habitId: HabitId): boolean {

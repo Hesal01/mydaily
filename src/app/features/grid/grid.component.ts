@@ -85,7 +85,7 @@ interface CompletionItem {
                     <button class="fchip" [class.active]="!filteredHabit()" (click)="setFilter(null)">
                       Tous
                     </button>
-                    @for (h of habits; track h.id) {
+                    @for (h of habits(); track h.id) {
                       <button
                         class="fchip"
                         [class.active]="filteredHabit() === h.id"
@@ -175,7 +175,7 @@ interface CompletionItem {
                   </div>
 
                   <div class="icon-matrix" [style.grid-template-columns]="'repeat(' + visibleUsers().length + ', 1fr)'">
-                    @for (habit of habits; track habit.id; let hLast = $last) {
+                    @for (habit of habits(); track habit.id; let hLast = $last) {
                       @for (userData of selectedDateCompletions(); track userData.userId; let cLast = $last) {
                         <div
                           class="mtx-cell"
@@ -210,21 +210,23 @@ interface CompletionItem {
               </div>
             </div>
 
-            <!-- Screen 2: Study progress -->
-            <div class="screen">
-              <div class="calendar-zone">
-                <app-study-progress
-                  [users]="visibleUsers()"
-                  [badgesByUserId]="badgesByUserId()"
-                  [currentUserId]="currentUserId()"
-                />
+            <!-- Screen 2: Study progress (salons qui suivent l'habitude Étude) -->
+            @if (showStudyScreen()) {
+              <div class="screen">
+                <div class="calendar-zone">
+                  <app-study-progress
+                    [users]="visibleUsers()"
+                    [badgesByUserId]="badgesByUserId()"
+                    [currentUserId]="currentUserId()"
+                  />
+                </div>
               </div>
-            </div>
+            }
           </div>
         </div>
 
         <div class="screen-dots">
-          @for (i of screenIndices; track i) {
+          @for (i of screenIndices(); track i) {
             <button class="dot" [class.active]="currentScreen() === i" (click)="setScreen(i)" [attr.aria-label]="screenLabels[i]"></button>
           }
         </div>
@@ -235,6 +237,7 @@ interface CompletionItem {
               [completions]="selectedDateUserCompletions()"
               [canEdit]="canEdit()"
               [infoDate]="selectedDateShort()"
+              [habits]="habits()"
               (toggleHabit)="onToggleHabit($event)"
             />
           </div>
@@ -632,11 +635,18 @@ export class GridComponent implements OnDestroy {
   private readonly salonId$ = toObservable(this.currentSalonId);
   readonly mySalons = this.salonService.mySalons;
   readonly today = this.dateService.getToday();
-  readonly habits = HABITS;
+  /** Les habitudes du salon affiché : un salon peut n'en suivre qu'une partie. */
+  readonly habits = this.salonService.currentHabits;
   readonly filteredHabit = signal<HabitId | null>(null);
 
   readonly currentScreen = signal(0);
-  readonly screenIndices = [0, 1, 2];
+  /**
+   * L'écran Étude n'existe que pour l'habitude `study` : un salon qui ne la
+   * suit pas s'arrête à deux écrans. Étude étant le dernier, le retirer suffit
+   * — les positions des deux premiers ne bougent pas.
+   */
+  readonly showStudyScreen = computed(() => this.habits().some(h => h.id === 'study'));
+  readonly screenIndices = computed(() => this.showStudyScreen() ? [0, 1, 2] : [0, 1]);
   readonly screenLabels = ['Habitudes', 'Lecture', 'Étude'];
   readonly showQuranModal = signal(false);
   readonly showStudyModal = signal(false);
@@ -824,6 +834,10 @@ export class GridComponent implements OnDestroy {
     if (salonId === this.currentSalonId()) return;
     this.hapticService.tap();
     this.optimisticOverlay.set({});
+    // Le salon rejoint ne suit pas forcément les mêmes habitudes : un filtre ou
+    // un écran hérité du précédent n'y existerait pas.
+    this.filteredHabit.set(null);
+    this.currentScreen.set(0);
     this.authService.switchSalon(salonId);
   }
 
@@ -832,7 +846,7 @@ export class GridComponent implements OnDestroy {
     if (!h) {
       const c = this.getMergedCompletions(userId, date);
       let count = 0;
-      for (const habit of this.habits) {
+      for (const habit of this.habits()) {
         if (c[habit.id]) count++;
       }
       return this.legendColors[Math.min(count, this.legendColors.length - 1)];
@@ -880,7 +894,9 @@ export class GridComponent implements OnDestroy {
 
   getCompletedItems(completions: HabitCompletions): CompletionItem[] {
     const result: CompletionItem[] = [];
-    for (const habit of HABITS) {
+    // Filtré sur les habitudes du salon : quelqu'un présent dans deux salons
+    // coche partout, mais une grille ne montre jamais ce qu'elle ne suit pas.
+    for (const habit of this.habits()) {
       if (completions[habit.id]) {
         const item: CompletionItem = { icon: habit.icon, color: habit.color };
         if (habit.id === 'book' && (completions.bookPages ?? 0) > 0) {
@@ -1108,7 +1124,7 @@ export class GridComponent implements OnDestroy {
     const deltaY = event.changedTouches[0].clientY - this.screenTouchStartY;
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > this.SWIPE_THRESHOLD) {
       const current = this.currentScreen();
-      if (deltaX < 0 && current < this.screenIndices.length - 1) {
+      if (deltaX < 0 && current < this.screenIndices().length - 1) {
         this.setScreen(current + 1);
       } else if (deltaX > 0 && current > 0) {
         this.setScreen(current - 1);
@@ -1181,7 +1197,7 @@ export class GridComponent implements OnDestroy {
 
   private hasAnyCompletion(userId: string, date: string): boolean {
     const c = this.getMergedCompletions(userId, date);
-    return this.habits.some(habit => !!c[habit.id]);
+    return this.habits().some(habit => !!c[habit.id]);
   }
 
   // Only today's cells, belonging to someone else, with at least one habit done.

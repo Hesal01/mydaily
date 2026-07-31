@@ -1,3 +1,5 @@
+import { HabitId } from './habit.model';
+
 /**
  * Un salon regroupe un ensemble de personnes qui partagent la même grille.
  *
@@ -13,6 +15,14 @@
 export interface Salon {
   id: string;
   name: string;
+  /**
+   * Habitudes suivies par ce salon, dans l'ordre de HABITS. Absent ou vide =
+   * toutes : les salons d'avant ce champ ne changent pas d'affichage.
+   *
+   * L'écran Étude en dépend — il n'existe que pour l'habitude `study`, donc un
+   * salon qui ne la suit pas ne l'affiche pas.
+   */
+  habitIds?: HabitId[];
   createdAt?: Date;
 }
 

@@ -1,6 +1,8 @@
-import { Injectable, inject, signal, effect } from '@angular/core';
+import { Injectable, inject, signal, effect, computed } from '@angular/core';
 import { Firestore, doc, getDoc } from '@angular/fire/firestore';
 import { Salon } from '../models/salon.model';
+import { HabitId } from '../models/habit.model';
+import { HABITS } from '../constants/habits.constants';
 import { AuthService } from './auth.service';
 
 /**
@@ -49,12 +51,31 @@ export class SalonService {
     let salon: Salon = { id, name: id };
     try {
       const snap = await getDoc(doc(this.firestore, 'salons', id));
-      const name = snap.data()?.['name'] as string | undefined;
+      const data = snap.data();
+      const name = data?.['name'] as string | undefined;
+      const habitIds = data?.['habitIds'] as HabitId[] | undefined;
       if (name) salon = { id, name };
+      if (Array.isArray(habitIds) && habitIds.length > 0) salon = { ...salon, habitIds };
     } catch (error) {
       console.error('Salon fetch error:', error);
     }
     this.cache.set(id, salon);
     return salon;
   }
+
+  /** Le salon affiché, une fois sa lecture faite. */
+  readonly currentSalon = computed(() => {
+    const id = this.auth.salonId();
+    return id ? this.salonsSignal().find(s => s.id === id) ?? null : null;
+  });
+
+  /**
+   * Habitudes du salon affiché. Un salon sans `habitIds` les suit toutes, ce
+   * qui garde les salons d'avant ce champ à l'identique.
+   */
+  readonly currentHabits = computed(() => {
+    const ids = this.currentSalon()?.habitIds;
+    if (!ids || ids.length === 0) return HABITS;
+    return HABITS.filter(h => ids.includes(h.id));
+  });
 }
