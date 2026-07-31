@@ -414,9 +414,16 @@ interface CompletionItem {
     .grid {
       display: grid;
       gap: 4px;
+      justify-items: center;
     }
     .cell {
       aspect-ratio: 1;
+      width: 100%;
+      /* Garde-fou : la largeur d'une cellule est une fraction du nombre de
+         colonnes, donc un effectif réduit (mode privé, salon à deux) la ferait
+         gonfler jusqu'à la pleine largeur. Au-delà de cette borne ce ne sont
+         plus des cases, ce sont des pavés. */
+      max-width: 56px;
       border-radius: var(--radius-xs);
       position: relative;
       transition: background-color var(--duration-base) ease, transform 0.15s ease;

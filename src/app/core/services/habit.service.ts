@@ -42,8 +42,20 @@ export class HabitService {
       const usersRef = collection(this.firestore, 'users');
       const q = query(usersRef, where('salonIds', 'array-contains', salonId));
 
+      // Firestore émet d'abord son cache local, qui ne connaît pas forcément
+      // tous les membres du salon — au premier lancement dans un salon rejoint,
+      // souvent un seul. La grille se dessinerait alors sur un effectif partiel,
+      // et comme la largeur d'une cellule est une fraction du nombre de
+      // colonnes, tout sauterait de taille à l'arrivée du serveur. On attend
+      // donc la première réponse serveur, sauf hors ligne où le cache est tout
+      // ce qu'on aura.
+      let servedOnce = false;
+
       const unsubscribe = onSnapshot(q,
         (snapshot) => {
+          if (snapshot.metadata.fromCache && !servedOnce && navigator.onLine) return;
+          if (!snapshot.metadata.fromCache) servedOnce = true;
+
           const users = snapshot.docs
             .map(doc => ({
               id: doc.id,
