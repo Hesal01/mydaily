@@ -3,7 +3,8 @@
     "allow": [
       "Bash(ng build)",
       "Bash(firebase deploy:*)",
-      "Bash(git fetch *)"
+      "Bash(git fetch *)",
+      "Bash(git switch *)"
     ]
   }
 }
