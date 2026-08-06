@@ -6,7 +6,7 @@ import { QuranModalComponent } from './components/quran-modal.component';
 import { QuranProgressComponent } from './components/quran-progress.component';
 import { StudyModalComponent } from './components/study-modal.component';
 import { StudyProgressComponent } from './components/study-progress.component';
-import { InstallPromptComponent } from '../../shared/components/install-prompt.component';
+import { NotificationPromptComponent } from '../../shared/components/notification-prompt.component';
 import { ToastComponent } from '../../shared/components/toast.component';
 // Screens temporarily retired from the carousel (app narrowed to 3 screens).
 // Components kept in the repo for easy reinstatement — re-add the import,
@@ -45,22 +45,32 @@ interface CompletionItem {
     QuranProgressComponent,
     StudyModalComponent,
     StudyProgressComponent,
-    InstallPromptComponent,
+    NotificationPromptComponent,
     ToastComponent,
     CelebrationOverlayComponent,
   ],
   template: `
     <div class="container">
       <!-- Sélecteur de salon : n'apparaît que pour qui en a plusieurs. Hors du
-           bloc de chargement, sinon il disparaît le temps de chaque bascule. -->
-      @if (mySalons().length > 1) {
+           bloc de chargement, sinon il disparaît le temps de chaque bascule.
+           La barre porte aussi la puce notifs : l'option manuelle pour activer
+           (ou débloquer) les notifications, tant qu'elles ne tournent pas. -->
+      @if (mySalons().length > 1 || showNotifChip()) {
         <div class="salon-bar">
-          @for (salon of mySalons(); track salon.id) {
-            <button
-              class="salon-chip"
-              [class.active]="salon.id === currentSalonId()"
-              (click)="switchSalon(salon.id)"
-            >{{ salon.name }}</button>
+          @if (mySalons().length > 1) {
+            @for (salon of mySalons(); track salon.id) {
+              <button
+                class="salon-chip"
+                [class.active]="salon.id === currentSalonId()"
+                (click)="switchSalon(salon.id)"
+              >{{ salon.name }}</button>
+            }
+          }
+          @if (showNotifChip()) {
+            <button class="notif-chip" (click)="onEnableNotifs()">
+              <i class="ph ph-bell-slash"></i>
+              <span>{{ notifChipLabel() }}</span>
+            </button>
           }
         </div>
       }
@@ -275,7 +285,7 @@ interface CompletionItem {
 
       <app-celebration-overlay [bursts]="celebrations()" [toast]="congratsMessage()" />
       <app-toast />
-      <app-install-prompt />
+      <app-notification-prompt />
     </div>
   `,
   styles: [`
@@ -351,6 +361,30 @@ interface CompletionItem {
       background: var(--color-text);
       border-color: var(--color-text);
       color: var(--color-bg);
+    }
+
+    .notif-chip {
+      flex-shrink: 0;
+      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      border-radius: var(--radius-pill);
+      border: 1px solid color-mix(in srgb, #f5b700 55%, var(--color-border));
+      background: color-mix(in srgb, #f5b700 10%, var(--color-bg));
+      color: var(--color-text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: transform var(--duration-fast) var(--spring);
+    }
+    .notif-chip:active { transform: scale(0.94); }
+    .notif-chip i {
+      font-size: 14px;
+      line-height: 1;
+      color: #b58900;
     }
 
     .filter-bar {
@@ -777,11 +811,13 @@ export class GridComponent implements OnDestroy {
   constructor() {
     this.camelWatcher.start();
 
+    // Au chargement on ne fait que constater l'état des notifs (et rafraîchir
+    // le token si la permission est déjà là) : la demande de permission part
+    // d'un geste utilisateur — bannière ou puce — sinon le navigateur la bloque.
     effect(() => {
       const userId = this.currentUserId();
       if (userId) {
-        this.notificationService.requestPermissionAndSaveToken(userId);
-        this.notificationService.listenForMessages();
+        void this.notificationService.syncStatus(userId);
       }
     }, { allowSignalWrites: true });
 
@@ -866,6 +902,28 @@ export class GridComponent implements OnDestroy {
     this.filteredHabit.set(null);
     this.currentScreen.set(0);
     this.authService.switchSalon(salonId);
+  }
+
+  /**
+   * Puce « Activer les notifs » : l'option manuelle, toujours accessible tant
+   * que les notifs ne tournent pas — la bannière, elle, se referme. Cachée en
+   * `not-supported` : rien d'actionnable sur un navigateur qui ne sait pas.
+   */
+  readonly showNotifChip = computed(() => {
+    if (!this.currentUserId()) return false;
+    const status = this.notificationService.status();
+    return status === 'pending' || status === 'denied' || status === 'ios-needs-install';
+  });
+
+  readonly notifChipLabel = computed(() =>
+    this.notificationService.status() === 'denied' ? 'Notifs bloquées' : 'Activer les notifs'
+  );
+
+  onEnableNotifs(): void {
+    const userId = this.currentUserId();
+    if (!userId) return;
+    this.hapticService.tap();
+    void this.notificationService.activate(userId);
   }
 
   cellColor(userId: string, date: string): string {

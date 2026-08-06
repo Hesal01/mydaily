@@ -3,18 +3,23 @@ import { Firestore, doc, setDoc } from '@angular/fire/firestore';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import { getApp } from 'firebase/app';
 import { environment } from '../../../environments/environment';
+import { ToastService } from './toast.service';
 
 export type NotificationStatus = 'ready' | 'ios-needs-install' | 'not-supported' | 'denied' | 'pending';
 
 @Injectable({ providedIn: 'root' })
 export class NotificationService {
   private firestore = inject(Firestore);
+  private toast = inject(ToastService);
   private messaging: Messaging | null = null;
   private messageListenerActive = false;
 
   readonly status = signal<NotificationStatus>('pending');
   readonly isIOS = signal(false);
   readonly isStandalone = signal(false);
+  /** Bannière d'aide refermée pour cette session ; elle revient à la prochaine
+   *  visite tant que les notifs ne sont pas actives. */
+  readonly bannerDismissed = signal(false);
 
   constructor() {
     this.detectPlatform();
@@ -30,14 +35,6 @@ export class NotificationService {
     const displayModeStandalone = window.matchMedia('(display-mode: standalone)').matches;
     const navigatorStandalone = (window.navigator as any).standalone;
     const isStandalone = displayModeStandalone || navigatorStandalone === true;
-
-    console.log('Platform detection:', {
-      userAgent,
-      isIOS,
-      displayModeStandalone,
-      navigatorStandalone,
-      isStandalone
-    });
 
     this.isIOS.set(isIOS);
     this.isStandalone.set(isStandalone);
@@ -56,82 +53,133 @@ export class NotificationService {
     }
   }
 
-  async requestPermissionAndSaveToken(userId: string): Promise<void> {
-    // Check if Notification API is supported
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      console.log('Notifications not supported');
-      this.status.set('not-supported');
+  /**
+   * Au chargement : ne demande jamais la permission — sans geste utilisateur,
+   * les navigateurs ignorent ou refusent la demande en silence. Si elle est
+   * déjà accordée, rafraîchit le token ; sinon pose juste le statut pour que
+   * la grille propose l'activation manuelle (puce + bannière).
+   */
+  async syncStatus(userId: string): Promise<void> {
+    const blocked = this.blockedStatus();
+    if (blocked) {
+      this.status.set(blocked);
+      return;
+    }
+    if (Notification.permission === 'granted') {
+      await this.saveToken(userId);
+      this.listenForMessages();
+      return;
+    }
+    this.status.set(Notification.permission === 'denied' ? 'denied' : 'pending');
+  }
+
+  /**
+   * Activation manuelle, à appeler depuis un geste utilisateur (la demande de
+   * permission n'aboutit que là). Gère aussi le retour visible : toast de
+   * confirmation ou d'explication, et réaffichage de la bannière d'aide quand
+   * il faut d'abord installer l'app.
+   */
+  async activate(userId: string): Promise<void> {
+    const blocked = this.blockedStatus();
+    if (blocked) {
+      this.status.set(blocked);
+      this.bannerDismissed.set(false);
+      if (blocked === 'not-supported') {
+        this.toast.show('Ce navigateur ne permet pas les notifications', { icon: 'bell-slash', durationMs: 4000 });
+      }
       return;
     }
 
-    // iOS specific handling - temporarily disabled for debugging
-    // if (this.isIOS()) {
-    //   if (!this.isStandalone()) {
-    //     console.log('iOS: App needs to be installed to home screen');
-    //     this.status.set('ios-needs-install');
-    //     return;
-    //   }
-    // }
-
     try {
       const permission = await Notification.requestPermission();
-
-      if (permission === 'granted') {
-        console.log('Notification permission granted');
-        this.status.set('ready');
-
-        const messaging = this.getMessagingInstance();
-        if (!messaging) {
-          console.log('Messaging not available');
-          return;
-        }
-
-        // Register service worker
-        let registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
-        if (!registration) {
-          registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-        }
-        console.log('Service worker registered');
-
-        // Wait for service worker to be active
-        if (registration.installing || registration.waiting) {
-          await new Promise<void>((resolve) => {
-            const sw = registration!.installing || registration!.waiting;
-            if (!sw) {
-              resolve();
-              return;
-            }
-            sw.addEventListener('statechange', () => {
-              if (sw.state === 'activated') {
-                resolve();
-              }
-            });
-          });
-        }
-        console.log('Service worker active');
-
-        // Get FCM token
-        const token = await getToken(messaging, {
-          vapidKey: environment.firebase.vapidKey,
-          serviceWorkerRegistration: registration
-        });
-
-        if (token) {
-          console.log('FCM Token:', token);
-
-          // Save token to Firestore
-          const userRef = doc(this.firestore, 'users', userId);
-          await setDoc(userRef, { fcmToken: token }, { merge: true });
-          console.log('Token saved to Firestore');
-        }
-      } else {
-        console.log('Notification permission denied');
+      if (permission !== 'granted') {
         this.status.set('denied');
+        this.toast.show('Notifications bloquées — autorise-les dans les réglages du navigateur', {
+          icon: 'bell-slash',
+          durationMs: 5000
+        });
+        return;
       }
+      await this.saveToken(userId);
     } catch (error) {
       console.error('Error requesting notification permission:', error);
       this.status.set('not-supported');
     }
+
+    if (this.status() === 'ready') {
+      this.listenForMessages();
+      this.toast.show('Notifications activées', { icon: 'bell-ringing', iconColor: 'var(--color-success)' });
+    } else {
+      this.toast.show("L'activation a échoué, réessaie plus tard", { icon: 'bell-slash', durationMs: 4000 });
+    }
+  }
+
+  /**
+   * Ce qui rend toute demande de permission vaine ici : API absente, ou iOS
+   * hors PWA — Safari n'expose les notifs qu'une fois l'app ajoutée à l'écran
+   * d'accueil et ouverte depuis son icône.
+   */
+  private blockedStatus(): NotificationStatus | null {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return this.isIOS() && !this.isStandalone() ? 'ios-needs-install' : 'not-supported';
+    }
+    if (this.isIOS() && !this.isStandalone()) {
+      return 'ios-needs-install';
+    }
+    return null;
+  }
+
+  /** Enregistre le service worker, récupère le token FCM et le stocke sur le doc user. */
+  private async saveToken(userId: string): Promise<void> {
+    try {
+      const messaging = this.getMessagingInstance();
+      if (!messaging) {
+        this.status.set('not-supported');
+        return;
+      }
+
+      let registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
+      if (!registration) {
+        registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      }
+
+      if (registration.installing || registration.waiting) {
+        await new Promise<void>((resolve) => {
+          const sw = registration!.installing || registration!.waiting;
+          if (!sw) {
+            resolve();
+            return;
+          }
+          sw.addEventListener('statechange', () => {
+            if (sw.state === 'activated') {
+              resolve();
+            }
+          });
+        });
+      }
+
+      const token = await getToken(messaging, {
+        vapidKey: environment.firebase.vapidKey,
+        serviceWorkerRegistration: registration
+      });
+
+      if (!token) {
+        this.status.set('not-supported');
+        return;
+      }
+
+      const userRef = doc(this.firestore, 'users', userId);
+      await setDoc(userRef, { fcmToken: token }, { merge: true });
+      console.log('FCM token saved for', userId);
+      this.status.set('ready');
+    } catch (error) {
+      console.error('Error saving FCM token:', error);
+      this.status.set('not-supported');
+    }
+  }
+
+  dismissBanner(): void {
+    this.bannerDismissed.set(true);
   }
 
   listenForMessages(): void {
