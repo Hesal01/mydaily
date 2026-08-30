@@ -182,6 +182,33 @@ export class NotificationService {
     }
   }
 
+  /**
+   * Affiche la notif quand l'app est au premier plan : le service worker s'en
+   * abstient dès qu'un onglet est visible, c'est donc à la page de le faire.
+   *
+   * Sur mobile le constructeur `Notification` n'existe pas dans la page : ni
+   * Chrome sur Android (« Illegal constructor. Use
+   * ServiceWorkerRegistration.showNotification() instead. ») ni WebKit sur iOS
+   * ne l'exposent ailleurs que dans le service worker. L'appeler y levait une
+   * exception avalée par onMessage : app ouverte = notif perdue en silence, et
+   * rien ne le signalait. On passe donc par le registration, seule voie commune
+   * à tous, en gardant le constructeur en secours pour les navigateurs de
+   * bureau.
+   */
+  private async showForeground(title: string, body?: string): Promise<void> {
+    const options: NotificationOptions = { body, icon: '/icons/icon-192x192.png' };
+    try {
+      const registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
+      if (registration) {
+        await registration.showNotification(title, options);
+        return;
+      }
+      new Notification(title, options);
+    } catch (error) {
+      console.error('Error showing foreground notification:', error);
+    }
+  }
+
   dismissBanner(): void {
     this.bannerDismissed.set(true);
   }
@@ -207,10 +234,10 @@ export class NotificationService {
         }
 
         if (payload.notification) {
-          new Notification(payload.notification.title || 'MyDaily', {
-            body: payload.notification.body,
-            icon: '/icons/icon-192x192.png'
-          });
+          void this.showForeground(
+            payload.notification.title || 'MyDaily',
+            payload.notification.body
+          );
         }
       });
       this.messageListenerActive = true;
