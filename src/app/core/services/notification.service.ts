@@ -1,5 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { Firestore, doc, setDoc, arrayUnion } from '@angular/fire/firestore';
+import { Firestore, doc, setDoc, arrayUnion, serverTimestamp } from '@angular/fire/firestore';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import { getApp } from 'firebase/app';
 import { environment } from '../../../environments/environment';
@@ -172,8 +172,19 @@ export class NotificationService {
       // téléphone et l'ordi soient prévenus tous les deux ; `fcmToken` reste
       // écrit pour les sessions qui n'ont pas encore rechargé le nouveau code.
       // Les entrées mortes sont retirées à l'envoi, côté Cloud Function.
+      //
+      // `fcmTokenUpdatedAt` date le dernier passage ici, et ce passage n'a lieu
+      // que si la permission est accordée sur cet appareil. C'est la seule
+      // trace qui distingue « appareil sain » de « permission perdue » : un
+      // token périmé reste en base et FCM continue de l'accepter, donc rien
+      // d'autre ne trahit le trou. Quelqu'un qui coche ses habitudes tous les
+      // jours avec un token qui date de trois semaines ne reçoit plus rien.
       const userRef = doc(this.firestore, 'users', userId);
-      await setDoc(userRef, { fcmToken: token, fcmTokens: arrayUnion(token) }, { merge: true });
+      await setDoc(userRef, {
+        fcmToken: token,
+        fcmTokens: arrayUnion(token),
+        fcmTokenUpdatedAt: serverTimestamp()
+      }, { merge: true });
       console.log('FCM token saved for', userId);
       this.status.set('ready');
     } catch (error) {

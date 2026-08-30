@@ -260,11 +260,16 @@ async function sendBatchedNotification(userId, habits) {
     console.log(`Sent ${successCount} notifications for ${userId}, ${failureCount} failures`);
 
     // Les réponses sont dans l'ordre des tokens envoyés : on peut donc dire
-    // exactement quel appareil a disparu, et le retirer de sa personne.
+    // exactement quel appareil a disparu, et le retirer de sa personne. Chaque
+    // échec est nommé — sans propriétaire ni code d'erreur, un appareil qui ne
+    // reçoit plus rien ne se voit que comme un compteur qui ne descend jamais.
     const dead = [];
     responses.forEach((response, gi) => {
       response.responses.forEach((result, ti) => {
-        if (!result.success && isDeadToken(result.error)) dead.push(entries[gi].tokens[ti]);
+        if (result.success) return;
+        const token = entries[gi].tokens[ti];
+        console.warn('Send failed for', owner.get(token), '-', result.error && result.error.code, token.slice(0, 12) + '…');
+        if (isDeadToken(result.error)) dead.push(token);
       });
     });
     await pruneTokens(dead, owner);
@@ -389,7 +394,9 @@ exports.onCongratsCreate = functions.firestore
 
       const dead = [];
       response.responses.forEach((result, i) => {
-        if (!result.success && isDeadToken(result.error)) dead.push(tokens[i]);
+        if (result.success) return;
+        console.warn('Congrats send failed for', to, '-', result.error && result.error.code, tokens[i].slice(0, 12) + '…');
+        if (isDeadToken(result.error)) dead.push(tokens[i]);
       });
       await pruneTokens(dead, new Map(tokens.map(t => [t, to])));
     } catch (error) {

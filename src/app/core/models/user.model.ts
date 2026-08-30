@@ -29,6 +29,21 @@ export interface User {
   studyVerse?: number;         // dernier verset étudié (0 = pas commencé)
   studyCompletedSurahs?: number[]; // numéros des sourates terminées
   studyProgress?: Record<string, number>; // mémoire par sourate : clé = n° sourate, valeur = dernier verset étudié
+  /**
+   * Appareils joignables par push, une entrée par navigateur. `fcmToken` est
+   * l'ancienne forme mono-appareil, encore écrite pour les sessions qui n'ont
+   * pas rechargé l'app ; les Cloud Functions lisent les deux.
+   */
+  fcmToken?: string;
+  fcmTokens?: string[];
+  /**
+   * Dernier rafraîchissement du token, écrit à chaque ouverture de l'app — mais
+   * seulement quand la permission est accordée sur l'appareil. Une date qui
+   * traîne loin derrière la dernière activité de la personne signe une
+   * permission perdue : son ancien token reste valide côté FCM, les envois se
+   * disent réussis, et plus rien ne s'affiche chez elle.
+   */
+  fcmTokenUpdatedAt?: Date;
   createdAt?: Date;
   firstConnectedAt?: Date;
   /**
