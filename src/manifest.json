@@ -2,7 +2,7 @@
   "name": "MyDaily",
   "short_name": "MyDaily",
   "description": "Suivi quotidien des habitudes",
-  "start_url": "/",
+  "start_url": "/grid",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#2da44e",

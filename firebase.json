@@ -32,7 +32,7 @@
         ]
       },
       {
-        "source": "/@(index.html|manifest.json|firebase-messaging-sw.js)",
+        "source": "/@(index.html|manifest.json|firebase-messaging-sw.js|grid|invalid-token)",
         "headers": [
           {
             "key": "Cache-Control",
