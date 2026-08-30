@@ -1,5 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { Firestore, doc, setDoc } from '@angular/fire/firestore';
+import { Firestore, doc, setDoc, arrayUnion } from '@angular/fire/firestore';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import { getApp } from 'firebase/app';
 import { environment } from '../../../environments/environment';
@@ -168,8 +168,12 @@ export class NotificationService {
         return;
       }
 
+      // Un appareil = un token. `fcmTokens` les garde tous pour que le
+      // téléphone et l'ordi soient prévenus tous les deux ; `fcmToken` reste
+      // écrit pour les sessions qui n'ont pas encore rechargé le nouveau code.
+      // Les entrées mortes sont retirées à l'envoi, côté Cloud Function.
       const userRef = doc(this.firestore, 'users', userId);
-      await setDoc(userRef, { fcmToken: token }, { merge: true });
+      await setDoc(userRef, { fcmToken: token, fcmTokens: arrayUnion(token) }, { merge: true });
       console.log('FCM token saved for', userId);
       this.status.set('ready');
     } catch (error) {

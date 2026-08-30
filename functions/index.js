@@ -124,6 +124,68 @@ function badgeFor(userData, userId, salonId) {
 }
 
 /**
+ * Tous les appareils d'une personne. `fcmTokens` fait foi — une entrée par
+ * appareil, pour que le téléphone et l'ordi sonnent tous les deux. `fcmToken`
+ * reste lu pour les docs écrits avant la liste et pour les sessions qui n'ont
+ * pas encore rechargé l'app ; le client écrit les deux, d'où la déduplication.
+ */
+function tokensOf(userData) {
+  const list = Array.isArray(userData && userData.fcmTokens) ? userData.fcmTokens : [];
+  const legacy = userData && userData.fcmToken;
+  const all = legacy ? list.concat([legacy]) : list;
+  return Array.from(new Set(all.filter(t => typeof t === 'string' && t.length > 0)));
+}
+
+/**
+ * Codes qui disent « cet appareil n'existe plus » — désinstallation, stockage
+ * effacé par le navigateur, permission révoquée. Volontairement limité à ces
+ * deux-là : `invalid-argument` peut aussi désigner un payload mal formé, et on
+ * effacerait alors les tokens de tout le monde pour une erreur d'envoi.
+ */
+const DEAD_TOKEN_CODES = new Set([
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token'
+]);
+
+function isDeadToken(error) {
+  return !!error && DEAD_TOKEN_CODES.has(error.code);
+}
+
+/**
+ * Retire du doc user les tokens que FCM vient de rejeter. Sans ça un token mort
+ * reste en base pour toujours : l'envoi se dit réussi, personne ne reçoit rien,
+ * et rien ne le signale.
+ */
+async function dropTokens(userId, tokens) {
+  const ref = db.collection('users').doc(userId);
+  try {
+    const snap = await ref.get();
+    if (!snap.exists) return;
+    const update = { fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokens) };
+    if (tokens.includes(snap.data().fcmToken)) {
+      update.fcmToken = admin.firestore.FieldValue.delete();
+    }
+    await ref.update(update);
+    console.log(`Pruned ${tokens.length} dead token(s) for ${userId}`);
+  } catch (error) {
+    console.error('Error pruning tokens for', userId, error);
+  }
+}
+
+/** Regroupe les tokens morts par personne avant de les retirer. */
+async function pruneTokens(dead, owner) {
+  if (dead.length === 0) return;
+  const byUser = new Map();
+  dead.forEach(token => {
+    const uid = owner.get(token);
+    if (!uid) return;
+    if (!byUser.has(uid)) byUser.set(uid, []);
+    byUser.get(uid).push(token);
+  });
+  await Promise.all(Array.from(byUser, ([uid, tokens]) => dropTokens(uid, tokens)));
+}
+
+/**
  * Helper function to send batched notification.
  * Ne notifie que les salons de la personne : un salon ne doit jamais apprendre
  * l'activité d'un autre, même par une notif push. Quelqu'un présent dans
@@ -156,6 +218,7 @@ async function sendBatchedNotification(userId, habits) {
   // multicast unique. Un token déjà vu dans un salon précédent n'est pas repris
   // — une seule notif par personne, même pour qui partage deux salons.
   const seen = new Set();
+  const owner = new Map(); // token -> userId, pour savoir chez qui retirer un token mort
   const groups = new Map();
   snapshots.forEach((snapshot, i) => {
     const tracked = readHabitIds(salonDocs[i]);
@@ -165,11 +228,14 @@ async function sendBatchedNotification(userId, habits) {
     const badge = badgeFor(authorData, userId, salonIds[i]);
     const key = `${badge}|${shown.join(',')}`;
     snapshot.forEach(doc => {
-      const data = doc.data();
-      if (!data.fcmToken || doc.id === userId || seen.has(data.fcmToken)) return;
-      seen.add(data.fcmToken);
-      if (!groups.has(key)) groups.set(key, { badge, shown, tokens: [] });
-      groups.get(key).tokens.push(data.fcmToken);
+      if (doc.id === userId) return;
+      tokensOf(doc.data()).forEach(token => {
+        if (seen.has(token)) return;
+        seen.add(token);
+        owner.set(token, doc.id);
+        if (!groups.has(key)) groups.set(key, { badge, shown, tokens: [] });
+        groups.get(key).tokens.push(token);
+      });
     });
   });
 
@@ -179,8 +245,9 @@ async function sendBatchedNotification(userId, habits) {
   }
 
   try {
+    const entries = Array.from(groups.values());
     const responses = await Promise.all(
-      Array.from(groups.values(), ({ badge, shown, tokens }) => messaging.sendEachForMulticast({
+      entries.map(({ badge, shown, tokens }) => messaging.sendEachForMulticast({
         notification: {
           title: `${badge} a complété ${shown.length > 1 ? 'des habitudes' : 'une habitude'}!`,
           body: shown.map(h => HABIT_EMOJIS[h]).join(' ')
@@ -191,6 +258,17 @@ async function sendBatchedNotification(userId, habits) {
     const successCount = responses.reduce((total, r) => total + r.successCount, 0);
     const failureCount = responses.reduce((total, r) => total + r.failureCount, 0);
     console.log(`Sent ${successCount} notifications for ${userId}, ${failureCount} failures`);
+
+    // Les réponses sont dans l'ordre des tokens envoyés : on peut donc dire
+    // exactement quel appareil a disparu, et le retirer de sa personne.
+    const dead = [];
+    responses.forEach((response, gi) => {
+      response.responses.forEach((result, ti) => {
+        if (!result.success && isDeadToken(result.error)) dead.push(entries[gi].tokens[ti]);
+      });
+    });
+    await pruneTokens(dead, owner);
+
     return responses;
   } catch (error) {
     console.error('Error sending batched notification:', error);
@@ -282,9 +360,9 @@ exports.onCongratsCreate = functions.firestore
       return null;
     }
 
-    const token = toDoc.exists ? toDoc.data().fcmToken : null;
+    const tokens = tokensOf(toDoc.exists ? toDoc.data() : null);
 
-    if (!token) {
+    if (tokens.length === 0) {
       console.log('No FCM token for recipient', to);
       return null;
     }
@@ -302,12 +380,18 @@ exports.onCongratsCreate = functions.firestore
         type: 'congrats',
         fromUser: String(from)
       },
-      token: token
+      tokens: tokens
     };
 
     try {
-      await messaging.send(message);
-      console.log(`Congrats notification sent to ${to} from ${from}`);
+      const response = await messaging.sendEachForMulticast(message);
+      console.log(`Congrats notification sent to ${to} from ${from} (${response.successCount}/${tokens.length})`);
+
+      const dead = [];
+      response.responses.forEach((result, i) => {
+        if (!result.success && isDeadToken(result.error)) dead.push(tokens[i]);
+      });
+      await pruneTokens(dead, new Map(tokens.map(t => [t, to])));
     } catch (error) {
       console.error('Error sending congrats notification:', error);
     }
