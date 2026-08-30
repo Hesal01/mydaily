@@ -138,10 +138,8 @@ export class TokenEntryComponent implements OnInit {
   error = false;
 
   async ngOnInit(): Promise<void> {
-    // Attendre que le cache storage soit lu
-    while (!this.authService.isInitialized()) {
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
+    // Attendre que le cache storage soit lu, sans y rester coincé
+    await this.authService.waitUntilInitialized();
 
     this.isLoading = false;
 

@@ -7,6 +7,24 @@ const USER_KEY = 'mydaily_userId';
 /** Salon actuellement consulté, quand la personne en a plusieurs. */
 const SALON_KEY = 'mydaily_salonId';
 
+/**
+ * Plafond de lecture du stockage au démarrage. Le Cache Storage répond
+ * normalement en quelques millisecondes, mais quand il ne répond pas du tout
+ * — et ça arrive au réveil d'une PWA — rien ne réveille l'app : les écrans
+ * attendent `isInitialized()` en boucle et la personne reste devant un écran
+ * blanc jusqu'à ce qu'elle tue l'app. Passé ce délai on démarre avec ce que
+ * localStorage a déjà donné, qui suffit à reconnaître quelqu'un de connu.
+ */
+const STORAGE_TIMEOUT_MS = 3000;
+
+/** Rend une promesse bornée : sa valeur, ou le repli si elle traîne trop. */
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms))
+  ]);
+}
+
 /** Appartenances d'un doc user, tolérant au format d'avant les salons multiples. */
 function readSalonIds(data: Record<string, unknown> | undefined): string[] {
   const list = data?.['salonIds'];
@@ -50,11 +68,11 @@ export class AuthService {
     }
 
     // Then, try async cache storage (shared with PWA)
-    const cachedUserId = await this.sharedStorage.get(USER_KEY);
+    const cachedUserId = await withTimeout(this.sharedStorage.get(USER_KEY), STORAGE_TIMEOUT_MS, syncUserId);
     if (cachedUserId) {
       this.currentUserId.set(cachedUserId);
       void this.sharedStorage.requestPersistence();
-      const cachedSalonId = await this.sharedStorage.get(SALON_KEY);
+      const cachedSalonId = await withTimeout(this.sharedStorage.get(SALON_KEY), STORAGE_TIMEOUT_MS, null);
       if (cachedSalonId) this.activeSalonId.set(cachedSalonId);
 
       const watching = this.watchUser(cachedUserId);
@@ -70,6 +88,22 @@ export class AuthService {
     }
 
     this.initialized.set(true);
+  }
+
+  /**
+   * Attend la fin de l'initialisation, sans jamais attendre pour toujours.
+   * `initSession()` borne déjà ses lectures, mais deux écrans dépendent de ce
+   * signal pour s'afficher : une boucle sans plafond ici et le moindre grain de
+   * sable laisse un écran blanc que seule la relance de l'app dénoue. Au-delà
+   * du délai on continue avec la session lue dans localStorage, qui est déjà
+   * posée de façon synchrone au tout début de `initSession()`.
+   */
+  async waitUntilInitialized(timeoutMs = 8000): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (!this.initialized() && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    return this.initialized();
   }
 
   /**

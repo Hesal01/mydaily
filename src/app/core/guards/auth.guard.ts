@@ -6,10 +6,8 @@ export const authGuard: CanActivateFn = async (route: ActivatedRouteSnapshot) =>
   const authService = inject(AuthService);
   const router = inject(Router);
 
-  // Attendre l'initialisation
-  while (!authService.isInitialized()) {
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
+  // Attendre l'initialisation, sans risquer d'attendre pour toujours
+  await authService.waitUntilInitialized();
 
   // Déjà authentifié
   if (authService.isAuthenticated()) {
