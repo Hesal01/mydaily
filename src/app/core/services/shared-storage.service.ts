@@ -48,4 +48,22 @@ export class SharedStorageService {
   getSync(key: string): string | null {
     return localStorage.getItem(key);
   }
+
+  /**
+   * Demande au navigateur de ne pas évincer ce stockage. Sans ça, WebKit efface
+   * localStorage *et* le Cache Storage après environ sept jours sans visite :
+   * la session part avec, et la personne se retrouve devant l'écran de saisie
+   * du token — qu'elle n'a plus. C'est accordé en silence aux PWA installées ;
+   * ailleurs le navigateur peut refuser, on ne fait que demander.
+   */
+  async requestPersistence(): Promise<boolean> {
+    try {
+      if (typeof navigator === 'undefined' || !navigator.storage?.persist) return false;
+      if (await navigator.storage.persisted()) return true;
+      return await navigator.storage.persist();
+    } catch (error) {
+      console.error('SharedStorage persist error:', error);
+      return false;
+    }
+  }
 }

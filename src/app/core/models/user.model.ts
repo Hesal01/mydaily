@@ -31,4 +31,11 @@ export interface User {
   studyProgress?: Record<string, number>; // mémoire par sourate : clé = n° sourate, valeur = dernier verset étudié
   createdAt?: Date;
   firstConnectedAt?: Date;
+  /**
+   * Moment où la personne a copié ou partagé son lien d'accès. Porté par le doc
+   * user, pas par le navigateur : c'est justement quand le stockage local est
+   * effacé qu'on veut savoir si elle a de quoi revenir. Absent = la puce
+   * « Mon lien » insiste.
+   */
+  linkSavedAt?: Date;
 }

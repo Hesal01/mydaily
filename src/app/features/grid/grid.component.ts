@@ -7,6 +7,7 @@ import { QuranProgressComponent } from './components/quran-progress.component';
 import { StudyModalComponent } from './components/study-modal.component';
 import { StudyProgressComponent } from './components/study-progress.component';
 import { NotificationPromptComponent } from '../../shared/components/notification-prompt.component';
+import { AccessLinkComponent } from './components/access-link.component';
 import { ToastComponent } from '../../shared/components/toast.component';
 // Screens temporarily retired from the carousel (app narrowed to 3 screens).
 // Components kept in the repo for easy reinstatement — re-add the import,
@@ -46,6 +47,7 @@ interface CompletionItem {
     StudyModalComponent,
     StudyProgressComponent,
     NotificationPromptComponent,
+    AccessLinkComponent,
     ToastComponent,
     CelebrationOverlayComponent,
   ],
@@ -55,7 +57,7 @@ interface CompletionItem {
            bloc de chargement, sinon il disparaît le temps de chaque bascule.
            La barre porte aussi la puce notifs : l'option manuelle pour activer
            (ou débloquer) les notifications, tant qu'elles ne tournent pas. -->
-      @if (mySalons().length > 1 || showNotifChip()) {
+      @if (mySalons().length > 1 || showNotifChip() || showLinkChip()) {
         <div class="salon-bar">
           @if (mySalons().length > 1) {
             @for (salon of mySalons(); track salon.id) {
@@ -66,10 +68,21 @@ interface CompletionItem {
               >{{ salon.name }}</button>
             }
           }
+          <div class="bar-spacer"></div>
           @if (showNotifChip()) {
             <button class="notif-chip" (click)="onEnableNotifs()">
               <i class="ph ph-bell-slash"></i>
               <span>{{ notifChipLabel() }}</span>
+            </button>
+          }
+          @if (showLinkChip()) {
+            <button
+              class="link-chip"
+              [class.unsaved]="!linkSaved()"
+              (click)="onShowAccessLink()"
+            >
+              <i class="ph ph-key"></i>
+              <span>{{ linkSaved() ? 'Mon lien' : 'Garde ton lien' }}</span>
             </button>
           }
         </div>
@@ -283,6 +296,14 @@ interface CompletionItem {
         />
       }
 
+      @if (showAccessLink() && myToken()) {
+        <app-access-link
+          [token]="myToken()!"
+          (saved)="onAccessLinkSaved()"
+          (close)="showAccessLink.set(false)"
+        />
+      }
+
       <app-celebration-overlay [bursts]="celebrations()" [toast]="congratsMessage()" />
       <app-toast />
       <app-notification-prompt />
@@ -363,9 +384,9 @@ interface CompletionItem {
       color: var(--color-bg);
     }
 
+    .bar-spacer { flex: 1 0 auto; }
     .notif-chip {
       flex-shrink: 0;
-      margin-left: auto;
       display: inline-flex;
       align-items: center;
       gap: 5px;
@@ -386,6 +407,33 @@ interface CompletionItem {
       line-height: 1;
       color: #b58900;
     }
+
+    /* Discrète une fois le lien mis de côté ; insistante tant qu'il ne l'est
+       pas — c'est la seule porte de retour si le navigateur oublie la session. */
+    .link-chip {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--color-border);
+      background: transparent;
+      color: var(--color-text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: transform var(--duration-fast) var(--spring);
+    }
+    .link-chip:active { transform: scale(0.94); }
+    .link-chip i { font-size: 14px; line-height: 1; }
+    .link-chip.unsaved {
+      border-color: color-mix(in srgb, var(--color-success) 55%, var(--color-border));
+      background: var(--color-success-soft);
+      color: var(--color-success-dark);
+    }
+    .link-chip.unsaved i { color: var(--color-success); }
 
     .filter-bar {
       display: flex;
@@ -695,6 +743,7 @@ export class GridComponent implements OnDestroy {
   readonly screenLabels = ['Habitudes', 'Lecture', 'Étude'];
   readonly showQuranModal = signal(false);
   readonly showStudyModal = signal(false);
+  readonly showAccessLink = signal(false);
 
   readonly currentUserObj = computed(() => {
     const id = this.currentUserId();
@@ -924,6 +973,28 @@ export class GridComponent implements OnDestroy {
     if (!userId) return;
     this.hapticService.tap();
     void this.notificationService.activate(userId);
+  }
+
+  /**
+   * Puce « Mon lien » : la porte de secours. Le navigateur efface la session au
+   * bout d'environ sept jours sans visite, et il ne reste alors que l'écran de
+   * saisie du token — que personne ne connaît par cœur. La puce insiste tant que
+   * le lien n'est pas sorti de l'app, puis se fait discrète sans disparaître.
+   */
+  readonly myToken = computed(() => this.currentUserObj()?.token ?? null);
+  readonly linkSaved = computed(() => !!this.currentUserObj()?.linkSavedAt);
+  readonly showLinkChip = computed(() => !!this.myToken());
+
+  onShowAccessLink(): void {
+    if (!this.myToken()) return;
+    this.hapticService.tap();
+    this.showAccessLink.set(true);
+  }
+
+  onAccessLinkSaved(): void {
+    const userId = this.currentUserId();
+    if (!userId) return;
+    void this.habitService.markAccessLinkSaved(userId);
   }
 
   cellColor(userId: string, date: string): string {

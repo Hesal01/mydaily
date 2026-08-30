@@ -53,6 +53,7 @@ export class AuthService {
     const cachedUserId = await this.sharedStorage.get(USER_KEY);
     if (cachedUserId) {
       this.currentUserId.set(cachedUserId);
+      void this.sharedStorage.requestPersistence();
       const cachedSalonId = await this.sharedStorage.get(SALON_KEY);
       if (cachedSalonId) this.activeSalonId.set(cachedSalonId);
 
@@ -140,6 +141,9 @@ export class AuthService {
       this.currentUserId.set(userId);
       this.applySalonIds(readSalonIds(userDoc.data()));
       await this.sharedStorage.set(USER_KEY, userId);
+      // Dès la première session : sans stockage persistant, elle ne passera
+      // pas la semaine et il faudra ressaisir ce token.
+      void this.sharedStorage.requestPersistence();
       await this.watchUser(userId);
 
       this.loading.set(false);

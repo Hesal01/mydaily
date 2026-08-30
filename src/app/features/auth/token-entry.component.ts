@@ -33,7 +33,11 @@ import { AuthService } from '../../core/services/auth.service';
             />
             <button (click)="login()" [disabled]="!tokenInput.trim()">→</button>
           </div>
-                  </div>
+          <p class="hint">
+            Tu es déjà venu ? Le navigateur oublie la session au bout d'une
+            semaine sans visite. Rouvre le lien qu'on t'a envoyé, ou redemande-le.
+          </p>
+        </div>
       }
     </div>
   `,
@@ -114,6 +118,13 @@ import { AuthService } from '../../core/services/auth.service';
       margin-top: 1rem;
       padding: 10px 24px;
       font-size: 14px;
+    }
+    .hint {
+      margin: 1.25rem 0 0;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #656d76;
+      text-align: left;
     }
     `]
 })

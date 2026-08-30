@@ -156,6 +156,16 @@ export class HabitService {
     await setDoc(docRef, { privacyMode: enabled }, { merge: true });
   }
 
+  /**
+   * Note que la personne a mis son lien d'accès de côté. Stocké côté serveur :
+   * l'information doit survivre à l'effacement du stockage du navigateur, qui
+   * est exactement le moment où ce lien devient vital.
+   */
+  async markAccessLinkSaved(userId: string): Promise<void> {
+    const docRef = doc(this.firestore, 'users', userId);
+    await setDoc(docRef, { linkSavedAt: serverTimestamp() }, { merge: true });
+  }
+
   async markBookForToday(
     userId: string,
     date: string,
