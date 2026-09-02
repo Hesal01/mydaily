@@ -5,7 +5,19 @@ import { getApp } from 'firebase/app';
 import { environment } from '../../../environments/environment';
 import { ToastService } from './toast.service';
 
-export type NotificationStatus = 'ready' | 'ios-needs-install' | 'not-supported' | 'denied' | 'pending';
+/**
+ * `checking` est l'état de départ : on ne sait pas encore. Il compte, parce que
+ * `pending` veut dire « la permission n'a jamais été demandée » et déclenche
+ * bannière et puce — les afficher tant qu'on n'a pas regardé revient à inviter
+ * à activer ce qui l'est peut-être déjà.
+ */
+export type NotificationStatus =
+  | 'checking'
+  | 'ready'
+  | 'ios-needs-install'
+  | 'not-supported'
+  | 'denied'
+  | 'pending';
 
 @Injectable({ providedIn: 'root' })
 export class NotificationService {
@@ -14,7 +26,7 @@ export class NotificationService {
   private messaging: Messaging | null = null;
   private messageListenerActive = false;
 
-  readonly status = signal<NotificationStatus>('pending');
+  readonly status = signal<NotificationStatus>('checking');
   readonly isIOS = signal(false);
   readonly isStandalone = signal(false);
   /** Bannière d'aide refermée pour cette session ; elle revient à la prochaine
@@ -66,6 +78,13 @@ export class NotificationService {
       return;
     }
     if (Notification.permission === 'granted') {
+      // Permission accordée : c'est déjà « activé » du point de vue de la
+      // personne, et le dire tout de suite compte. Enregistrer le service
+      // worker puis aller chercher le token prend deux allers-retours réseau,
+      // et pendant ce temps le statut restait à sa valeur de départ : bannière
+      // et puce s'affichaient chez des gens dont les notifs marchaient très
+      // bien. `saveToken` corrige derrière si le token se dérobe.
+      this.status.set('ready');
       await this.saveToken(userId);
       this.listenForMessages();
       return;
