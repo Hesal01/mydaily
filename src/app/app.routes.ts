@@ -14,6 +14,12 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    path: 'reglages',
+    loadComponent: () => import('./features/settings/settings-page.component')
+      .then(m => m.SettingsPageComponent),
+    canActivate: [authGuard]
+  },
+  {
     path: 'invalid-token',
     loadComponent: () => import('./features/auth/invalid-token.component')
       .then(m => m.InvalidTokenComponent)
