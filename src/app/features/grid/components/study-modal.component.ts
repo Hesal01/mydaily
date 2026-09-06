@@ -70,7 +70,9 @@ interface CoStudent {
           </button>
 
           <div class="mlinks">
-            <span (click)="goToList.emit()">Changer de sourate</span>
+            @if (!fromList()) {
+              <span (click)="goToList.emit()">Voir toutes les sourates</span>
+            }
             @if (studyDoneToday()) {
               <span (click)="onUnmark()">Décocher aujourd'hui</span>
             }
@@ -202,6 +204,8 @@ interface CoStudent {
       font-size: 12px;
       color: #656d76;
     }
+    /* Seul rescapé (la liste est derrière, ou l'étude n'est pas cochée) : centré. */
+    .mlinks span:only-child { margin: 0 auto; }
     .mlinks span {
       cursor: pointer;
       text-decoration: underline;
@@ -273,6 +277,11 @@ export class StudyModalComponent {
    * ait rattrapé son retard pour afficher le bon verset.
    */
   readonly initialSurah = input<number | null>(null);
+  /**
+   * La piste a été ouverte depuis la liste : inutile d'y proposer un lien
+   * vers la liste, elle est juste derrière la modale.
+   */
+  readonly fromList = input<boolean>(false);
   readonly isInitials = isInitialsBadge;
 
   readonly markVerse = output<{ surah: number; verse: number }>();

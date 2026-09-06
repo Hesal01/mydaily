@@ -274,6 +274,7 @@ interface CompletionItem {
           [currentUserId]="currentUserId()"
           [studyDoneToday]="selectedDateUserCompletions().study"
           [initialSurah]="studyModalSurah()"
+          [fromList]="studyModalFromList()"
           (markVerse)="onStudyMarkVerse($event)"
           (completeSurah)="onStudyComplete($event)"
           (unmarkToday)="onStudyUnmark()"
@@ -699,6 +700,8 @@ export class GridComponent implements OnDestroy {
   readonly showStudyModal = signal(false);
   /** Sourate sur laquelle ouvrir la piste, quand elle vient de la liste. */
   readonly studyModalSurah = signal<number | null>(null);
+  /** Vrai quand la piste a été ouverte en touchant une carte de la liste. */
+  readonly studyModalFromList = signal(false);
   private readonly STUDY_SCREEN = 2;
 
   readonly currentUserObj = computed(() => {
@@ -1007,6 +1010,7 @@ export class GridComponent implements OnDestroy {
         return;
       }
       this.studyModalSurah.set(surah);
+      this.studyModalFromList.set(false);
       this.showStudyModal.set(true);
       return;
     }
@@ -1097,6 +1101,7 @@ export class GridComponent implements OnDestroy {
    */
   async onStudyOpenSurah(surahNumber: number): Promise<void> {
     this.studyModalSurah.set(surahNumber);
+    this.studyModalFromList.set(true);
     this.showStudyModal.set(true);
     if (this.currentUserObj()?.studySurah !== surahNumber) {
       await this.onStudySelectSurah(surahNumber);
