@@ -336,12 +336,6 @@ export class StudyModalComponent {
 
   readonly verse = signal(0);
   readonly confirmReset = signal(false);
-  /**
-   * Plancher forcé après une remise à zéro : le doc user met un instant à
-   * revenir de Firestore, et sans ça le premier « +1 » repartirait de l'ancien
-   * verset.
-   */
-  private readonly localFloor = signal<number | null>(null);
   private readonly localSurah = signal<number | null>(null);
   readonly completedView = signal(false);
   private readonly doneSurah = signal<number | null>(null);
@@ -362,8 +356,6 @@ export class StudyModalComponent {
 
   // Plancher = verset atteint à l'ouverture (base du delta du jour).
   private readonly minVerse = computed(() => {
-    const floor = this.localFloor();
-    if (floor !== null) return floor;
     const local = this.localSurah();
     if (local !== null) return this.progressFor(local);
     return this.currentUser()?.studyVerse ?? 0;
@@ -451,9 +443,8 @@ export class StudyModalComponent {
     const surah = this.activeSurahNumber();
     if (!surah) return;
     this.resetSurah.emit({ surah, previousVerse: this.verse() });
-    this.localFloor.set(0);
-    this.verse.set(0);
-    this.confirmReset.set(false);
+    // La confirmation est faite : le toast prend le relais, la piste s'efface.
+    this.close.emit();
   }
 
   onUnmark(): void {
