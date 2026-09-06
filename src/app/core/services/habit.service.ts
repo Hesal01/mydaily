@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, query, where, orderBy, onSnapshot, doc, setDoc, serverTimestamp, getDocs, arrayUnion, deleteField } from '@angular/fire/firestore';
+import { Firestore, collection, query, where, orderBy, onSnapshot, doc, setDoc, serverTimestamp, getDocs, arrayUnion, arrayRemove, deleteField } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { HabitDay, HabitId, HabitCompletions, RawHabitCompletions, createEmptyCompletions, normalizeCompletions } from '../models/habit.model';
@@ -15,6 +15,20 @@ export interface DailyStat {
   completed: number;
   total: number;
 }
+
+/**
+ * Combien de temps la grille attend une réponse serveur avant de se contenter
+ * du cache. Assez long pour que le cas normal passe par le serveur, assez court
+ * pour qu'une ouverture ne reste pas bloquée.
+ */
+const SERVER_WAIT_MS = 1500;
+
+/** Efface l'annonce en attente : trois champs qui vont toujours ensemble. */
+const CLEAR_CLAIM = {
+  studyClaimSurah: deleteField(),
+  studyClaimVerse: deleteField(),
+  studyClaimAt: deleteField()
+};
 
 @Injectable({ providedIn: 'root' })
 export class HabitService {
@@ -36,8 +50,16 @@ export class HabitService {
    *
    * Le tri par `displayOrder` est fait côté client : combiné au filtre salon
    * il demanderait un index composite, pour une poignée de documents.
+   *
+   * `waitForServer: false` sert aux écrans qui préfèrent le cache immédiat à
+   * un effectif complet (cf. la page Réglages, restée vide tant qu'elle
+   * attendait une réponse serveur qui ne venait pas).
    */
-  getAllUsers(salonId: string): Observable<User[]> {
+  getAllUsers(salonId: string, options?: { waitForServer?: boolean }): Observable<User[]> {
+    // Hors de la grille, rien ne saute de taille : mieux vaut le cache tout de
+    // suite qu'un écran vide si la réponse serveur tarde — sur une page qui
+    // n'ouvre que cette écoute, elle peut ne jamais venir.
+    const waitForServer = options?.waitForServer !== false;
     return new Observable<User[]>(subscriber => {
       const usersRef = collection(this.firestore, 'users');
       const q = query(usersRef, where('salonIds', 'array-contains', salonId));
@@ -50,24 +72,44 @@ export class HabitService {
       // donc la première réponse serveur, sauf hors ligne où le cache est tout
       // ce qu'on aura.
       let servedOnce = false;
+      // Dernier état connu du cache, gardé sous le coude : si le serveur ne
+      // répond pas, c'est lui qu'on affichera plutôt qu'un écran d'attente.
+      let cached: User[] | null = null;
+
+      const emit = (users: User[]) => {
+        servedOnce = true;
+        subscriber.next(users);
+      };
+
+      // Filet : la réponse serveur peut ne jamais venir (flux Firestore établi
+      // mais muet). Sans ce délai, l'app reste sur son rond qui tourne alors
+      // que tout est déjà là — c'est l'ouverture « sans fin » déjà vue.
+      const fallback = setTimeout(() => {
+        if (!servedOnce && cached) emit(cached);
+      }, SERVER_WAIT_MS);
 
       const unsubscribe = onSnapshot(q,
         (snapshot) => {
-          if (snapshot.metadata.fromCache && !servedOnce && navigator.onLine) return;
-          if (!snapshot.metadata.fromCache) servedOnce = true;
-
           const users = snapshot.docs
             .map(doc => ({
               id: doc.id,
               ...doc.data()
             } as User))
             .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
-          subscriber.next(users);
+
+          if (waitForServer && snapshot.metadata.fromCache && !servedOnce && navigator.onLine) {
+            cached = users;
+            return;
+          }
+          emit(users);
         },
         (error) => subscriber.error(error)
       );
 
-      return () => unsubscribe();
+      return () => {
+        clearTimeout(fallback);
+        unsubscribe();
+      };
     });
   }
 
@@ -206,7 +248,8 @@ export class HabitService {
     date: string,
     currentCompletions: HabitCompletions,
     verse: number,
-    surah: number
+    surah: number,
+    pending?: { claimedSince: number }
   ): Promise<void> {
     const habitDocRef = doc(this.firestore, 'habits', `${date}_${userId}`);
     await setDoc(habitDocRef, {
@@ -222,6 +265,19 @@ export class HabitService {
 
     const safeVerse = Math.max(0, verse);
     const userDocRef = doc(this.firestore, 'users', userId);
+
+    if (pending) {
+      // Un relecteur est en place : les versets sont annoncés, pas acquis.
+      // `studyVerse` ne bougera qu'à son feu vert.
+      await setDoc(userDocRef, {
+        studyClaimSurah: surah,
+        studyClaimVerse: safeVerse,
+        studyClaimAt: pending.claimedSince,
+        studyTouchedAt: { [surah]: Date.now() }
+      }, { merge: true });
+      return;
+    }
+
     await setDoc(userDocRef, {
       studyVerse: safeVerse,
       studyProgress: { [surah]: safeVerse },
@@ -270,7 +326,9 @@ export class HabitService {
       studySurah: surahNumber,
       studyVerse: Math.max(0, resumeVerse),
       // Choisir une sourate est une activité : elle passe en tête de l'écran Étude.
-      studyTouchedAt: { [surahNumber]: Date.now() }
+      studyTouchedAt: { [surahNumber]: Date.now() },
+      // Une annonce non relue ne survit pas au changement de sourate.
+      ...CLEAR_CLAIM
     };
     if (prevSurah != null && prevSurah !== surahNumber && prevVerse != null && prevVerse > 0) {
       // Merge Firestore : fusionne cette clé de map sans écraser les autres.
@@ -288,7 +346,8 @@ export class HabitService {
   async resetStudySurah(userId: string, surahNumber: number, wasCurrent: boolean): Promise<void> {
     const data: Record<string, unknown> = {
       studyProgress: { [surahNumber]: 0 },
-      studyTouchedAt: { [surahNumber]: Date.now() }
+      studyTouchedAt: { [surahNumber]: Date.now() },
+      ...CLEAR_CLAIM
     };
     if (wasCurrent) {
       data['studySurah'] = deleteField();
@@ -314,6 +373,51 @@ export class HabitService {
       data['studyVerse'] = safeVerse;
     }
     await setDoc(doc(this.firestore, 'users', userId), data, { merge: true });
+  }
+
+  /**
+   * Feu vert du relecteur : les versets annoncés deviennent acquis. Une
+   * annonce qui va jusqu'au dernier verset termine la sourate — c'est le seul
+   * chemin vers le n/114 quand un relecteur est en place.
+   */
+  async validateStudyClaim(
+    userId: string,
+    surahNumber: number,
+    claimedVerse: number,
+    totalVerses: number
+  ): Promise<void> {
+    const safeVerse = Math.max(0, claimedVerse);
+    const finishes = totalVerses > 0 && safeVerse >= totalVerses;
+    const data: Record<string, unknown> = {
+      studyProgress: { [surahNumber]: safeVerse },
+      studyTouchedAt: { [surahNumber]: Date.now() },
+      ...CLEAR_CLAIM
+    };
+    if (finishes) {
+      data['studyCompletedSurahs'] = arrayUnion(surahNumber);
+      data['studySurah'] = deleteField();
+      data['studyVerse'] = deleteField();
+    } else {
+      data['studyVerse'] = safeVerse;
+    }
+    await setDoc(doc(this.firestore, 'users', userId), data, { merge: true });
+  }
+
+  /**
+   * Désigne (ou retire) le relecteur de l'étude pour un salon. Un seul à la
+   * fois : l'appelant passe l'ancien pour qu'il soit démis dans la foulée.
+   */
+  async setStudyValidator(salonId: string, userId: string | null, previousUserId?: string | null): Promise<void> {
+    if (previousUserId && previousUserId !== userId) {
+      await setDoc(doc(this.firestore, 'users', previousUserId), {
+        validatorSalonIds: arrayRemove(salonId)
+      }, { merge: true });
+    }
+    if (userId) {
+      await setDoc(doc(this.firestore, 'users', userId), {
+        validatorSalonIds: arrayUnion(salonId)
+      }, { merge: true });
+    }
   }
 
   /**
