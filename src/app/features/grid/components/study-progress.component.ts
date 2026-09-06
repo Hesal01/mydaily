@@ -335,7 +335,7 @@ interface Seg {
       display: flex;
       align-items: center;
       gap: 7px;
-      margin: 5px 0 0 27px;
+      margin: 7px 0 0 27px;
     }
     .track {
       position: relative;
@@ -353,15 +353,24 @@ interface Seg {
       transition: width var(--duration-slow) var(--ease-out);
     }
     .track b.me { background: var(--green); }
+    /* Le badge est posé au bout de la trace : la pastille le décolle du fond. */
     .rider {
       position: absolute;
       top: 50%;
       transform: translate(-50%, -50%);
-      font-size: 13px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--color-bg);
+      box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.10), 0 1px 2px rgba(15, 23, 42, 0.10);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
       line-height: 1;
       pointer-events: none;
     }
-    .rider.initials { font-size: 9.5px; font-weight: 700; }
+    .rider.initials { font-size: 9px; font-weight: 700; }
     .lane .v {
       flex-shrink: 0;
       min-width: 56px;

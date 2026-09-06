@@ -278,6 +278,7 @@ interface CompletionItem {
           (markVerse)="onStudyMarkVerse($event)"
           (completeSurah)="onStudyComplete($event)"
           (unmarkToday)="onStudyUnmark()"
+          (resetSurah)="onStudyReset($event)"
           (goToList)="onStudyGoToList()"
           (close)="showStudyModal.set(false)"
         />
@@ -1106,6 +1107,33 @@ export class GridComponent implements OnDestroy {
     if (this.currentUserObj()?.studySurah !== surahNumber) {
       await this.onStudySelectSurah(surahNumber);
     }
+  }
+
+  /**
+   * Remise à zéro de son avancée sur une sourate. Ne touche ni aux autres
+   * membres, ni à la journée cochée — d'où le « Annuler » du toast, qui rend
+   * le verset d'avant.
+   */
+  async onStudyReset(event: { surah: number; previousVerse: number }): Promise<void> {
+    const userId = this.currentUserId();
+    if (!userId) return;
+    const isCurrent = this.currentUserObj()?.studySurah === event.surah;
+    this.hapticService.tap();
+
+    const name = getSurah(event.surah)?.nameFr ?? '';
+    this.toastService.show(`${name} remise à zéro`, {
+      icon: 'arrow-counter-clockwise',
+      iconColor: getHabitConfig('study')?.color,
+      action: {
+        label: 'Annuler',
+        handler: async () => {
+          this.hapticService.tap();
+          await this.habitService.setStudyVerseForSurah(userId, event.surah, event.previousVerse, isCurrent);
+        }
+      }
+    });
+
+    await this.habitService.setStudyVerseForSurah(userId, event.surah, 0, isCurrent);
   }
 
   /** Depuis la piste : revenir choisir dans la liste. */

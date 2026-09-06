@@ -16,6 +16,7 @@ interface CoStudent {
   template: `
     <div class="backdrop" (click)="close.emit()">
       <div class="modal" (click)="$event.stopPropagation()">
+        <button class="x" (click)="close.emit()" aria-label="Fermer">✕</button>
 
         @if (completedView()) {
           <!-- ===== Sourate terminée ===== -->
@@ -69,14 +70,25 @@ interface CoStudent {
             @if (verse() >= ayahs()) { Terminer la sourate 🎉 } @else { Valider }
           </button>
 
-          <div class="mlinks">
-            @if (!fromList()) {
-              <span (click)="goToList.emit()">Voir toutes les sourates</span>
-            }
-            @if (studyDoneToday()) {
-              <span (click)="onUnmark()">Décocher aujourd'hui</span>
-            }
-          </div>
+          @if (confirmReset()) {
+            <div class="mlinks confirm">
+              <span class="ask">Effacer ton avancée sur cette sourate ?</span>
+              <span class="yes" (click)="doReset()">Oui, repartir de zéro</span>
+              <span (click)="confirmReset.set(false)">Annuler</span>
+            </div>
+          } @else {
+            <div class="mlinks">
+              @if (!fromList()) {
+                <span (click)="goToList.emit()">Voir toutes les sourates</span>
+              }
+              @if (verse() > 0) {
+                <span (click)="confirmReset.set(true)">Repartir de zéro</span>
+              }
+              @if (studyDoneToday()) {
+                <span (click)="onUnmark()">Décocher aujourd'hui</span>
+              }
+            </div>
+          }
         }
       </div>
     </div>
@@ -92,6 +104,7 @@ interface CoStudent {
       z-index: 100;
     }
     .modal {
+      position: relative;
       --gold: #d97706;
       --gold-soft: color-mix(in srgb, #d97706 22%, #ffffff);
       --green: var(--color-success);
@@ -102,6 +115,22 @@ interface CoStudent {
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
     }
     .num { font-variant-numeric: tabular-nums; }
+    .x {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 30px;
+      height: 30px;
+      border: none;
+      border-radius: 50%;
+      background: none;
+      color: #656d76;
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .x:active { background: var(--color-surface-2); }
     .ar {
       font-family: 'Geeza Pro', 'Al Bayan', 'Noto Naskh Arabic', 'Amiri', serif;
       color: #1f2328;
@@ -139,17 +168,26 @@ interface CoStudent {
       border-radius: 9px;
       transition: width var(--duration-base) var(--ease-out);
     }
+    /* Le badge chevauche la piste : une pastille le décolle du fond. */
     .vrider {
       position: absolute;
       top: 50%;
       transform: translate(-50%, -50%);
-      font-size: 16px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.10), 0 1px 2px rgba(15, 23, 42, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
       line-height: 1;
       z-index: 1;
       pointer-events: none;
     }
     .vrider.me { z-index: 2; }
-    .vrider.initials { font-size: 11px; font-weight: 700; }
+    .vrider.initials { font-size: 10px; font-weight: 700; color: #1f2328; }
     .chips {
       display: flex;
       justify-content: center;
@@ -199,13 +237,16 @@ interface CoStudent {
     .valid.finish { background: var(--gold); }
     .mlinks {
       display: flex;
-      justify-content: space-between;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px 16px;
       margin-top: 12px;
       font-size: 12px;
       color: #656d76;
     }
-    /* Seul rescapé (la liste est derrière, ou l'étude n'est pas cochée) : centré. */
-    .mlinks span:only-child { margin: 0 auto; }
+    .mlinks.confirm { flex-direction: column; align-items: center; gap: 8px; }
+    .mlinks .ask { text-decoration: none; cursor: default; color: #1f2328; font-weight: 600; }
+    .mlinks .yes { color: var(--gold); font-weight: 600; }
     .mlinks span {
       cursor: pointer;
       text-decoration: underline;
@@ -287,11 +328,20 @@ export class StudyModalComponent {
   readonly markVerse = output<{ surah: number; verse: number }>();
   readonly completeSurah = output<{ surah: number; verse: number }>();
   readonly unmarkToday = output<void>();
+  /** Remise à zéro de MON avancée sur cette sourate (l'ancien verset permet d'annuler). */
+  readonly resetSurah = output<{ surah: number; previousVerse: number }>();
   readonly close = output<void>();
   /** Renvoie vers l'écran Étude, seul endroit où l'on choisit sa sourate. */
   readonly goToList = output<void>();
 
   readonly verse = signal(0);
+  readonly confirmReset = signal(false);
+  /**
+   * Plancher forcé après une remise à zéro : le doc user met un instant à
+   * revenir de Firestore, et sans ça le premier « +1 » repartirait de l'ancien
+   * verset.
+   */
+  private readonly localFloor = signal<number | null>(null);
   private readonly localSurah = signal<number | null>(null);
   readonly completedView = signal(false);
   private readonly doneSurah = signal<number | null>(null);
@@ -312,6 +362,8 @@ export class StudyModalComponent {
 
   // Plancher = verset atteint à l'ouverture (base du delta du jour).
   private readonly minVerse = computed(() => {
+    const floor = this.localFloor();
+    if (floor !== null) return floor;
     const local = this.localSurah();
     if (local !== null) return this.progressFor(local);
     return this.currentUser()?.studyVerse ?? 0;
@@ -393,6 +445,15 @@ export class StudyModalComponent {
       this.markVerse.emit({ surah: s, verse: v });
       this.close.emit();
     }
+  }
+
+  doReset(): void {
+    const surah = this.activeSurahNumber();
+    if (!surah) return;
+    this.resetSurah.emit({ surah, previousVerse: this.verse() });
+    this.localFloor.set(0);
+    this.verse.set(0);
+    this.confirmReset.set(false);
   }
 
   onUnmark(): void {

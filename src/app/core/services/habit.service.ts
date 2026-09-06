@@ -280,6 +280,26 @@ export class HabitService {
   }
 
   /**
+   * Force l'avancée personnelle sur une sourate — remise à zéro, ou retour à
+   * une valeur précédente quand on annule. Ne touche qu'à ses propres versets :
+   * les co-étudiants gardent les leurs.
+   */
+  async setStudyVerseForSurah(
+    userId: string,
+    surahNumber: number,
+    verse: number,
+    isCurrentSurah: boolean
+  ): Promise<void> {
+    const safeVerse = Math.max(0, verse);
+    const data: Record<string, unknown> = {
+      studyProgress: { [surahNumber]: safeVerse },
+      studyTouchedAt: { [surahNumber]: Date.now() }
+    };
+    if (isCurrentSurah) data['studyVerse'] = safeVerse;
+    await setDoc(doc(this.firestore, 'users', userId), data, { merge: true });
+  }
+
+  /**
    * Termine la sourate en cours : l'ajoute aux sourates terminées, mémorise
    * le total de versets dans la map (cohérence) et libère la sourate courante
    * (studySurah / studyVerse effacés).
