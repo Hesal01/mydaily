@@ -55,6 +55,10 @@ interface CoStudent {
             <span class="vrider me" [class.initials]="isInitials(myEmoji())" [style.left]="myRiderLeft()" [attr.title]="myTitle()">{{ myEmoji() }}</span>
           </div>
 
+          @if (pendingLabel()) {
+            <div class="pending num">{{ pendingLabel() }}</div>
+          }
+
           <div class="chips">
             <button class="chip num" (click)="increment(1)">+1</button>
             <button class="chip num" (click)="increment(3)">+3</button>
@@ -67,7 +71,9 @@ interface CoStudent {
           </div>
 
           <button class="valid" [class.finish]="verse() >= ayahs()" (click)="validate()">
-            @if (verse() >= ayahs()) { Terminer la sourate 🎉 } @else { Valider }
+            @if (verse() >= ayahs()) {
+              @if (validatorBadge()) { Annoncer la fin à {{ validatorBadge() }} } @else { Terminer la sourate 🎉 }
+            } @else { Valider }
           </button>
 
           @if (confirmReset()) {
@@ -186,6 +192,16 @@ interface CoStudent {
     }
     .vrider.me { z-index: 2; }
     .vrider.initials { font-size: 10px; font-weight: 700; color: #1f2328; }
+    .pending {
+      text-align: center;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #92400e;
+      background: #fdf0dd;
+      border-radius: 999px;
+      padding: 5px 10px;
+      margin: -6px 0 14px;
+    }
     .chips {
       display: flex;
       justify-content: center;
@@ -321,6 +337,8 @@ export class StudyModalComponent {
    * vers la liste, elle est juste derrière la modale.
    */
   readonly fromList = input<boolean>(false);
+  /** Badge du relecteur — vide quand personne ne relit, ou quand c'est moi. */
+  readonly validatorBadge = input<string>('');
   readonly isInitials = isInitialsBadge;
 
   readonly markVerse = output<{ surah: number; verse: number }>();
@@ -352,11 +370,40 @@ export class StudyModalComponent {
     return this.currentUser()?.studyProgress?.[String(n)] ?? 0;
   }
 
+  /** Verset annoncé au relecteur sur cette sourate, 0 s'il n'y a rien en attente. */
+  claimFor(n: number): number {
+    const u = this.currentUser();
+    return u?.studyClaimSurah === n ? Math.max(0, u.studyClaimVerse ?? 0) : 0;
+  }
+
+  /** Dernier verset entendu : la trace pleine, sous la part annoncée. */
+  readonly validatedVerse = computed(() => {
+    const n = this.activeSurahNumber();
+    if (!n) return 0;
+    return n === this.currentUser()?.studySurah
+      ? this.currentUser()?.studyVerse ?? 0
+      : this.progressFor(n);
+  });
+
+  /** Ce qui attend le relecteur, une fois « Valider » touché. */
+  readonly pendingLabel = computed(() => {
+    const badge = this.validatorBadge();
+    if (!badge) return '';
+    const from = this.validatedVerse() + 1;
+    const to = this.verse();
+    if (to < from) return '';
+    return from === to
+      ? `${badge} doit entendre le verset ${from}`
+      : `${badge} doit entendre les versets ${from} à ${to}`;
+  });
+
   // Plancher = verset atteint à l'ouverture (base du delta du jour).
   private readonly minVerse = computed(() => {
+    const n = this.activeSurahNumber();
+    const claim = n ? this.claimFor(n) : 0;
     const local = this.localSurah();
-    if (local !== null) return this.progressFor(local);
-    return this.currentUser()?.studyVerse ?? 0;
+    const base = local !== null ? this.progressFor(local) : this.currentUser()?.studyVerse ?? 0;
+    return Math.max(base, claim);
   });
 
   // Δ du jour : versets ajoutés depuis l'ouverture.
@@ -405,9 +452,10 @@ export class StudyModalComponent {
     const current = this.currentUser()?.studySurah ?? null;
     if (target !== null && target !== current) {
       // Sourate rejointe ou reprise depuis la liste : on repart de sa mémoire.
-      this.verse.set(Math.max(1, this.progressFor(target)));
+      this.verse.set(Math.max(1, this.progressFor(target), this.claimFor(target)));
     } else {
-      this.verse.set(this.currentUser()?.studyVerse ?? 0);
+      const n = current ?? 0;
+      this.verse.set(Math.max(this.currentUser()?.studyVerse ?? 0, this.claimFor(n)));
     }
   }
 

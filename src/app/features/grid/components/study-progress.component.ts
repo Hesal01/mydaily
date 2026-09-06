@@ -5,10 +5,27 @@ import { isInitialsBadge } from '../../../core/constants/habits.constants';
 
 interface Lane {
   badge: string;
+  /** Dernier verset entendu par le relecteur (ou simplement atteint, sans relecteur). */
   verse: number;
+  /** Verset annoncé et pas encore entendu — 0 quand il n'y a rien en attente. */
+  claim: number;
   pct: number;
+  claimPct: number;
   mine: boolean;
   riderLeft: string;
+}
+
+/** Une annonce en attente, telle que la voit le relecteur. */
+interface ClaimRow {
+  userId: string;
+  badge: string;
+  surah: number;
+  nameFr: string;
+  ayahs: number;
+  from: number;
+  to: number;
+  age: string;
+  finishes: boolean;
 }
 
 /** Sourate en cours : la carte détaillée du haut d'écran. */
@@ -23,6 +40,8 @@ interface ActiveCard {
   mine: boolean;
   action: string;
   hint: string;
+  /** Versets annoncés sur cette sourate, tous membres confondus. */
+  pending: number;
 }
 
 interface DoneRow {
@@ -64,6 +83,9 @@ interface Seg {
         <span class="k"><i class="sw done"></i> la famille</span>
         <span class="k"><i class="sw me"></i> toi</span>
         <span class="k"><i class="sw prog"></i> en cours</span>
+        @if (validatorId()) {
+          <span class="k"><i class="sw wait"></i> annoncé à {{ validatorBadge() }}</span>
+        }
       </div>
 
       <div class="frise">
@@ -94,6 +116,28 @@ interface Seg {
         }
       </div>
 
+      @if (claimRows().length > 0) {
+        <div class="sechead">
+          <span class="l">À valider</span>
+          <span class="r num">{{ claimRows().length }} · {{ claimRows()[0].age }}</span>
+        </div>
+        <div class="stack">
+          @for (row of claimRows(); track row.userId) {
+            <div class="qrow">
+              <span class="qwho" [class.initials]="isInitials(row.badge)">{{ row.badge }}</span>
+              <span class="qtxt">
+                <span class="qt">
+                  @if (row.finishes) { {{ row.nameFr }} terminée }
+                  @else { {{ row.nameFr }}, versets {{ row.from }} à {{ row.to }} }
+                </span>
+                <span class="qs num">{{ row.age }} · {{ row.to - row.from + 1 }} versets</span>
+              </span>
+              <button class="qok" (click)="validateClaim.emit(row)">✓</button>
+            </div>
+          }
+        </div>
+      }
+
       @if (activeCards().length > 0) {
         <div class="sechead">
           <span class="l">En cours</span>
@@ -112,9 +156,18 @@ interface Seg {
                 <span class="lane">
                   <span class="track">
                     <b [class.me]="lane.mine" [style.width.%]="lane.pct"></b>
+                    @if (lane.claim > 0) {
+                      <u [style.left.%]="lane.pct" [style.width.%]="lane.claimPct - lane.pct"></u>
+                    }
                     <span class="rider" [class.initials]="isInitials(lane.badge)" [style.left]="lane.riderLeft">{{ lane.badge }}</span>
                   </span>
-                  <span class="v num" [class.me]="lane.mine">v. {{ lane.verse }}/{{ card.ayahs }}</span>
+                  <span class="v num" [class.me]="lane.mine">
+                    @if (lane.claim > 0) {
+                      {{ lane.verse }} <em class="w">+{{ lane.claim - lane.verse }}</em>
+                    } @else {
+                      v. {{ lane.verse }}/{{ card.ayahs }}
+                    }
+                  </span>
                 </span>
               }
               @if (card.extra > 0) {
@@ -122,7 +175,11 @@ interface Seg {
               }
               <span class="cfoot">
                 <span class="act" [class.pri]="card.mine">{{ card.action }}</span>
-                @if (card.hint) { <span class="hint num">{{ card.hint }}</span> }
+                @if (card.pending > 0 && !isValidator()) {
+                  <span class="wait num">{{ card.pending }} en attente de {{ validatorBadge() }}</span>
+                } @else if (card.hint) {
+                  <span class="hint num">{{ card.hint }}</span>
+                }
               </span>
             </button>
           }
@@ -353,6 +410,15 @@ interface Seg {
       transition: width var(--duration-slow) var(--ease-out);
     }
     .track b.me { background: var(--green); }
+    /* Versets annoncés, pas encore entendus par le relecteur. */
+    .track u {
+      position: absolute;
+      top: 0; bottom: 0;
+      border-radius: 0 5px 5px 0;
+      text-decoration: none;
+      background: repeating-linear-gradient(115deg, #f3c98a 0 4px, #fbe6c8 4px 8px);
+      box-shadow: inset 0 0 0 1px var(--gold-line);
+    }
     /* Le badge est posé au bout de la trace : la pastille le décolle du fond. */
     .rider {
       position: absolute;
@@ -402,6 +468,42 @@ interface Seg {
     }
     .act.pri { background: var(--green); border-color: var(--green); color: #ffffff; }
     .cfoot .hint { font-size: 10.5px; color: var(--color-text-muted); }
+    .cfoot .wait {
+      font-size: 10.5px;
+      font-weight: 600;
+      color: color-mix(in srgb, var(--gold) 80%, #1f2328);
+    }
+    .lane .v .w { font-style: normal; font-weight: 700; color: color-mix(in srgb, var(--gold) 80%, #1f2328); }
+    .sw.wait { background: repeating-linear-gradient(115deg, #f3c98a 0 3px, #fbe6c8 3px 6px); box-shadow: inset 0 0 0 1px var(--gold-line); }
+
+    /* ===== File du relecteur ===== */
+    .qrow {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--color-surface-2);
+      background: var(--color-bg);
+    }
+    .qrow:last-child { border-bottom: none; }
+    .qwho { width: 22px; text-align: center; font-size: 15px; flex-shrink: 0; }
+    .qwho.initials { font-size: 11px; font-weight: 700; }
+    .qtxt { flex: 1; min-width: 0; }
+    .qtxt .qt { display: block; font-size: 12.5px; font-weight: 600; }
+    .qtxt .qs { display: block; font-size: 10.5px; color: var(--color-text-muted); }
+    .qok {
+      flex-shrink: 0;
+      border: none;
+      border-radius: var(--radius-pill);
+      background: var(--green);
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 7px 16px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .qok:active { filter: brightness(0.94); }
 
     .row {
       display: flex;
@@ -468,8 +570,13 @@ export class StudyProgressComponent {
   readonly badgesByUserId = input.required<Record<string, string>>();
   readonly currentUserId = input.required<string | null>();
 
+  /** Le relecteur du salon, s'il y en a un : lui seul voit la file « À valider ». */
+  readonly validatorId = input<string | null>(null);
+
   /** Ouvrir la piste sur cette sourate (la choisir si ce n'est pas déjà la sienne). */
   readonly openSurah = output<number>();
+  /** Feu vert du relecteur sur une annonce. */
+  readonly validateClaim = output<ClaimRow>();
 
   readonly isInitials = isInitialsBadge;
   readonly total = TOTAL_SURAHS;
@@ -478,6 +585,7 @@ export class StudyProgressComponent {
   readonly doneOpen = signal(true);
 
   private readonly ayahsByNumber = new Map<number, number>(SURAHS.map(s => [s.number, s.ayahs]));
+  private readonly nameByNumber = new Map<number, string>(SURAHS.map(s => [s.number, s.nameFr]));
 
   private readonly me = computed(() => {
     const id = this.currentUserId();
@@ -509,13 +617,18 @@ export class StudyProgressComponent {
       if (!n) continue;
       const ayahs = this.ayahsByNumber.get(n) ?? 0;
       const verse = u.studyVerse ?? 0;
+      const claim = u.studyClaimSurah === n ? Math.max(0, u.studyClaimVerse ?? 0) : 0;
       const pct = ayahs > 0 ? Math.round((verse / ayahs) * 100) : 0;
+      // Le badge se pose au bout de ce qui est annoncé : c'est là qu'en est la personne.
+      const claimPct = ayahs > 0 ? Math.round((Math.max(verse, claim) / ayahs) * 100) : 0;
       const lane: Lane = {
         badge: this.badgesByUserId()[u.id] || '?',
         verse,
+        claim: claim > verse ? claim : 0,
         pct,
+        claimPct,
         mine: u.id === meId,
-        riderLeft: `clamp(9px, ${pct}%, calc(100% - 9px))`
+        riderLeft: `clamp(9px, ${claimPct}%, calc(100% - 9px))`
       };
       const list = map.get(n);
       if (list) list.push(lane); else map.set(n, [lane]);
@@ -568,22 +681,26 @@ export class StudyProgressComponent {
       const members = prog.get(s.number);
       if (!members || !this.matches(s.number, s.nameFr)) continue;
 
-      const lanes = [...members].sort((a, b) => b.verse - a.verse);
+      const lanes = [...members].sort((a, b) => (b.claim || b.verse) - (a.claim || a.verse));
       const mine = lanes.some(l => l.mine);
       const myVerse = myProgress[String(s.number)] ?? 0;
+      const pending = members.reduce((n, l) => n + (l.claim > l.verse ? l.claim - l.verse : 0), 0);
       cards.push({
         number: s.number,
         nameFr: s.nameFr,
         nameAr: s.nameAr,
         ayahs: s.ayahs,
-        meta: members.length > 1
-          ? `${s.ayahs} versets · ${mine ? `vous êtes ${members.length}` : `${members.length} personnes`}`
-          : `${s.ayahs} versets`,
+        meta: [
+          `${s.ayahs} versets`,
+          members.length > 1 ? (mine ? `vous êtes ${members.length}` : `${members.length} personnes`) : '',
+          pending > 0 ? `${pending} en attente` : ''
+        ].filter(Boolean).join(' · '),
         lanes: lanes.slice(0, 4),
         extra: Math.max(0, lanes.length - 4),
         mine,
         action: mine ? 'Continuer' : 'Rejoindre',
-        hint: !mine && myVerse > 0 ? `tu en es au verset ${myVerse}` : ''
+        hint: !mine && myVerse > 0 ? `tu en es au verset ${myVerse}` : '',
+        pending
       });
     }
 
@@ -596,6 +713,54 @@ export class StudyProgressComponent {
     const s = cards.length > 1 ? 's' : '';
     return `${cards.length} sourate${s} · ${people} personne${people > 1 ? 's' : ''}`;
   });
+
+  /** Suis-je le relecteur de ce salon ? */
+  readonly isValidator = computed(() => {
+    const v = this.validatorId();
+    return !!v && v === this.currentUserId();
+  });
+
+  /** Le badge du relecteur, pour dire à qui on annonce. */
+  readonly validatorBadge = computed(() => {
+    const v = this.validatorId();
+    return v ? this.badgesByUserId()[v] || '?' : '';
+  });
+
+  /** Les annonces à relire, la plus vieille en haut : c'est elle qui presse. */
+  readonly claimRows = computed<ClaimRow[]>(() => {
+    if (!this.isValidator()) return [];
+    const now = Date.now();
+    const rows: ClaimRow[] = [];
+    for (const u of this.users()) {
+      const surah = u.studyClaimSurah;
+      const to = u.studyClaimVerse ?? 0;
+      if (!surah || to <= 0) continue;
+      const from = (u.studyVerse ?? 0) + 1;
+      if (to < from) continue;
+      const ayahs = this.ayahsByNumber.get(surah) ?? 0;
+      rows.push({
+        userId: u.id,
+        badge: this.badgesByUserId()[u.id] || '?',
+        surah,
+        nameFr: this.nameByNumber.get(surah) ?? '',
+        ayahs,
+        from,
+        to,
+        age: this.ageLabel(now - (u.studyClaimAt ?? now)),
+        finishes: ayahs > 0 && to >= ayahs
+      });
+    }
+    return rows.sort((a, b) => a.surah - b.surah);
+  });
+
+  private ageLabel(ms: number): string {
+    const days = Math.floor(ms / 86400000);
+    if (days >= 2) return `il y a ${days} jours`;
+    if (days === 1) return 'hier';
+    const hours = Math.floor(ms / 3600000);
+    if (hours >= 1) return `il y a ${hours} h`;
+    return "à l'instant";
+  }
 
   readonly doneRows = computed<DoneRow[]>(() => {
     const prog = this.inProgress();

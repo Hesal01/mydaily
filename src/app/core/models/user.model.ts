@@ -37,6 +37,23 @@ export interface User {
    */
   studyTouchedAt?: Record<string, number>;
   /**
+   * Salons où cette personne relit l'étude des autres avant qu'elle compte.
+   * Porté par le user et non par le salon : les docs `salons` sont en lecture
+   * seule côté app (`allow write: if false`), et un rôle par salon suit déjà
+   * le modèle de `labels`.
+   */
+  validatorSalonIds?: string[];
+  /**
+   * Versets annoncés au relecteur mais pas encore entendus. Tant qu'ils sont
+   * là, `studyVerse` reste au dernier verset validé : plein = entendu,
+   * hachuré = annoncé.
+   */
+  studyClaimVerse?: number;
+  /** Sourate de l'annonce en attente (changer de sourate l'abandonne). */
+  studyClaimSurah?: number;
+  /** Première annonce non relue, en ms epoch — donne son âge à la file. */
+  studyClaimAt?: number;
+  /**
    * Appareils joignables par push, une entrée par navigateur. `fcmToken` est
    * l'ancienne forme mono-appareil, encore écrite pour les sessions qui n'ont
    * pas rechargé l'app ; les Cloud Functions lisent les deux.

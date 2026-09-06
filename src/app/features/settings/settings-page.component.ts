@@ -7,6 +7,8 @@ import { AuthService } from '../../core/services/auth.service';
 import { HabitService } from '../../core/services/habit.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { HapticService } from '../../core/services/haptic.service';
+import { SalonService } from '../../core/services/salon.service';
+import { USER_ICONS, isInitialsBadge } from '../../core/constants/habits.constants';
 import { SettingsComponent } from '../grid/components/settings.component';
 import { AccessLinkComponent } from '../grid/components/access-link.component';
 import { ToastComponent } from '../../shared/components/toast.component';
@@ -64,6 +66,31 @@ import { ToastComponent } from '../../shared/components/toast.component';
             </button>
           }
         </div>
+        @if (showValidatorCard()) {
+          <div class="card">
+            <div class="card-title">Qui relit l'étude</div>
+            <p class="card-desc">
+              La personne choisie entend les versets avant qu'ils comptent. Chez les autres,
+              ce qui est annoncé reste hachuré jusqu'à son feu vert — et une sourate ne
+              rejoint le compte de la famille qu'une fois entendue.
+            </p>
+            <div class="picker">
+              <button class="pick" [class.on]="!validatorId()" (click)="chooseValidator(null)">
+                <span class="pb none">—</span>
+                <span class="pn">Personne</span>
+                @if (!validatorId()) { <i class="ph ph-check"></i> }
+              </button>
+              @for (u of users(); track u.id) {
+                <button class="pick" [class.on]="validatorId() === u.id" (click)="chooseValidator(u.id)">
+                  <span class="pb" [class.initials]="isInitials(badgeOf(u.id))">{{ badgeOf(u.id) }}</span>
+                  @if (u.id === currentUserId()) { <span class="pn">Toi</span> }
+                  @if (validatorId() === u.id) { <i class="ph ph-check"></i> }
+                </button>
+              }
+            </div>
+            <p class="card-note">Le changement s'applique tout de suite, pour tout le monde.</p>
+          </div>
+        }
       </div>
 
       <app-settings
@@ -84,6 +111,52 @@ import { ToastComponent } from '../../shared/components/toast.component';
     </div>
   `,
   styles: [`
+    .picker {
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+    .pick {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      min-height: 44px;
+      border: none;
+      border-bottom: 1px solid var(--color-surface-2);
+      background: var(--color-bg);
+      color: var(--color-text);
+      font-family: inherit;
+      font-size: 14px;
+      text-align: left;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .pick:last-child { border-bottom: none; }
+    .pick.on { background: var(--color-success-soft); font-weight: 600; }
+    .pick i { margin-left: auto; color: var(--color-success); }
+    .pb {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--color-surface-1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      flex-shrink: 0;
+    }
+    .pb.initials { font-size: 11px; font-weight: 700; }
+    .pb.none { color: var(--color-text-muted); }
+    .pn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .card-note {
+      margin: 10px 0 0;
+      font-size: 12px;
+      color: var(--color-text-muted);
+    }
     .page {
       min-height: 100vh;
       min-height: 100dvh;
@@ -182,11 +255,15 @@ export class SettingsPageComponent {
   readonly showAccessLink = signal(false);
   readonly notifStatus = this.notificationService.status;
 
-  private readonly currentUserId = this.authService.userId;
+  private salonService = inject(SalonService);
+  readonly currentUserId = this.authService.userId;
+  readonly isInitials = isInitialsBadge;
   private readonly salonId$ = toObservable(this.authService.salonId);
 
   readonly users = toSignal(
-    this.salonId$.pipe(switchMap(salonId => salonId ? this.habitService.getAllUsers(salonId) : of([]))),
+    this.salonId$.pipe(switchMap(salonId =>
+      salonId ? this.habitService.getAllUsers(salonId, { waitForServer: false }) : of([])
+    )),
     { initialValue: [] }
   );
 
@@ -208,6 +285,36 @@ export class SettingsPageComponent {
     if (me?.privacyMode) return 1;
     return all.filter(u => u.id === me?.id || !u.privacyMode).length;
   });
+
+  /** La carte n'a de sens que dans un salon qui suit l'étude. */
+  readonly showValidatorCard = computed(() =>
+    this.salonService.currentHabits().some(h => h.id === 'study') && this.users().length > 1
+  );
+
+  readonly validatorId = computed(() => {
+    const salonId = this.authService.salonId();
+    if (!salonId) return null;
+    return this.users().find(u => u.validatorSalonIds?.includes(salonId))?.id ?? null;
+  });
+
+  badgeOf(userId: string): string {
+    const users = this.users();
+    const index = users.findIndex(u => u.id === userId);
+    const u = users[index];
+    if (!u) return '?';
+    const salonId = this.authService.salonId();
+    const perSalon = salonId ? u.labels?.[salonId]?.trim() : '';
+    return perSalon || u.label?.trim() || USER_ICONS[u.animalIndex ?? index] || '?';
+  }
+
+  async chooseValidator(userId: string | null): Promise<void> {
+    const salonId = this.authService.salonId();
+    if (!salonId) return;
+    const previous = this.validatorId();
+    if (previous === userId) return;
+    this.hapticService.tap();
+    await this.habitService.setStudyValidator(salonId, userId, previous);
+  }
 
   readonly notifDesc = computed(() => {
     switch (this.notifStatus()) {

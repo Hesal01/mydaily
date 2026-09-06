@@ -229,7 +229,9 @@ interface CompletionItem {
                     [users]="visibleUsers()"
                     [badgesByUserId]="badgesByUserId()"
                     [currentUserId]="currentUserId()"
+                    [validatorId]="studyValidatorId()"
                     (openSurah)="onStudyOpenSurah($event)"
+                    (validateClaim)="onStudyValidate($event)"
                   />
                 </div>
               </div>
@@ -275,6 +277,7 @@ interface CompletionItem {
           [studyDoneToday]="selectedDateUserCompletions().study"
           [initialSurah]="studyModalSurah()"
           [fromList]="studyModalFromList()"
+          [validatorBadge]="studyValidatorBadge()"
           (markVerse)="onStudyMarkVerse($event)"
           (completeSurah)="onStudyComplete($event)"
           (unmarkToday)="onStudyUnmark()"
@@ -704,6 +707,29 @@ export class GridComponent implements OnDestroy {
   /** Vrai quand la piste a été ouverte en touchant une carte de la liste. */
   readonly studyModalFromList = signal(false);
   private readonly STUDY_SCREEN = 2;
+
+  /**
+   * Le relecteur de l'étude pour ce salon : tant qu'il n'y en a pas, rien ne
+   * change pour personne. C'est le user qui porte le rôle (`validatorSalonIds`),
+   * les docs salons étant en lecture seule côté app.
+   */
+  readonly studyValidator = computed(() => {
+    const salonId = this.currentSalonId();
+    if (!salonId) return null;
+    return this.visibleUsers().find(u => u.validatorSalonIds?.includes(salonId)) ?? null;
+  });
+  readonly studyValidatorId = computed(() => this.studyValidator()?.id ?? null);
+  /** Vrai quand mes versets doivent passer par quelqu'un d'autre. */
+  readonly studyNeedsValidation = computed(() => {
+    const v = this.studyValidator();
+    return !!v && v.id !== this.currentUserId();
+  });
+  /** Badge du relecteur, vide quand c'est moi — je me valide d'office. */
+  readonly studyValidatorBadge = computed(() => {
+    const v = this.studyValidator();
+    if (!v || v.id === this.currentUserId()) return '';
+    return this.badgesByUserId()[v.id] || '?';
+  });
 
   readonly currentUserObj = computed(() => {
     const id = this.currentUserId();
@@ -1136,6 +1162,24 @@ export class GridComponent implements OnDestroy {
     await this.habitService.resetStudySurah(userId, event.surah, isCurrent);
   }
 
+  /**
+   * Feu vert du relecteur sur une annonce : les versets deviennent acquis chez
+   * la personne, et la sourate se termine si l'annonce allait jusqu'au bout.
+   */
+  async onStudyValidate(row: { userId: string; badge: string; surah: number; nameFr: string; ayahs: number; to: number; finishes: boolean }): Promise<void> {
+    this.hapticService.success();
+    if (row.finishes) {
+      this.spawnBurstAtViewportCenter();
+      this.showCongratsMessage(`${row.badge} a terminé ${row.nameFr} ! 🎉`);
+    } else {
+      this.toastService.show(`${row.badge} · ${row.nameFr} validée`, {
+        icon: 'check-circle',
+        iconColor: getHabitConfig('study')?.color
+      });
+    }
+    await this.habitService.validateStudyClaim(row.userId, row.surah, row.to, row.ayahs);
+  }
+
   /** Depuis la piste : revenir choisir dans la liste. */
   onStudyGoToList(): void {
     this.showStudyModal.set(false);
@@ -1149,9 +1193,10 @@ export class GridComponent implements OnDestroy {
 
     const date = this.selectedDate();
     const current = this.getMergedCompletions(userId, date);
+    const pending = this.studyPendingPayload();
     if (current.study) {
       // Already done today — just update the verse silently.
-      await this.habitService.markStudyForToday(userId, date, current, event.verse, event.surah);
+      await this.habitService.markStudyForToday(userId, date, current, event.verse, event.surah, pending);
       this.hapticService.success();
       return;
     }
@@ -1159,7 +1204,7 @@ export class GridComponent implements OnDestroy {
     this.hapticService.success();
     this.applyOptimistic(userId, date, { ...current, study: true });
 
-    this.toastService.show('Étude marquée', {
+    this.toastService.show(pending ? `Annoncé à ${this.studyValidatorBadge()}` : 'Étude marquée', {
       icon: 'book-open-text',
       iconColor: getHabitConfig('study')?.color,
       action: {
@@ -1173,12 +1218,21 @@ export class GridComponent implements OnDestroy {
     });
 
     try {
-      await this.habitService.markStudyForToday(userId, date, current, event.verse, event.surah);
+      await this.habitService.markStudyForToday(userId, date, current, event.verse, event.surah, pending);
     } catch (err) {
       this.revertOptimistic(userId, date);
       this.hapticService.error();
       throw err;
     }
+  }
+
+  /**
+   * L'annonce garde la date de la PREMIÈRE non relue : c'est son âge qui dit au
+   * relecteur ce qui traîne, pas celle du dernier ajout.
+   */
+  private studyPendingPayload(): { claimedSince: number } | undefined {
+    if (!this.studyNeedsValidation()) return undefined;
+    return { claimedSince: this.currentUserObj()?.studyClaimAt ?? Date.now() };
   }
 
   async onStudyComplete(event: { surah: number; verse: number }): Promise<void> {
@@ -1187,16 +1241,28 @@ export class GridComponent implements OnDestroy {
 
     const date = this.selectedDate();
     const current = this.getMergedCompletions(userId, date);
+    const pending = this.studyPendingPayload();
+    const name = getSurah(event.surah)?.nameFr ?? '';
 
     this.hapticService.success();
     this.applyOptimistic(userId, date, { ...current, study: true });
-    this.spawnBurstAtViewportCenter();
-    const name = getSurah(event.surah)?.nameFr ?? '';
-    this.showCongratsMessage(`Sourate ${name} terminée ! 🎉`);
+    if (pending) {
+      // La sourate n'est pas finie tant qu'elle n'a pas été entendue : ni
+      // confettis, ni n/114 — la fête attend le feu vert.
+      this.toastService.show(`${name} : ${this.studyValidatorBadge()} doit valider la fin`, {
+        icon: 'hourglass-medium',
+        iconColor: getHabitConfig('study')?.color
+      });
+    } else {
+      this.spawnBurstAtViewportCenter();
+      this.showCongratsMessage(`Sourate ${name} terminée ! 🎉`);
+    }
 
     try {
-      await this.habitService.markStudyForToday(userId, date, current, event.verse, event.surah);
-      await this.habitService.completeStudySurah(userId, event.surah, event.verse);
+      await this.habitService.markStudyForToday(userId, date, current, event.verse, event.surah, pending);
+      if (!pending) {
+        await this.habitService.completeStudySurah(userId, event.surah, event.verse);
+      }
     } catch (err) {
       this.revertOptimistic(userId, date);
       this.hapticService.error();
