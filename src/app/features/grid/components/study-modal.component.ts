@@ -1,9 +1,7 @@
 import { Component, input, output, signal, computed } from '@angular/core';
 import { User } from '../../../core/models/user.model';
-import { SURAHS, getSurah } from '../../../core/constants/surahs.constants';
+import { getSurah } from '../../../core/constants/surahs.constants';
 import { isInitialsBadge } from '../../../core/constants/habits.constants';
-
-type SelState = 'free' | 'prog' | 'done';
 
 interface CoStudent {
   emoji: string;
@@ -26,43 +24,20 @@ interface CoStudent {
             <div class="done-title">Sourate {{ doneSurahName() }} terminée !</div>
             <div class="done-sub">Choisis-en une nouvelle quand tu veux.</div>
             <div class="modal-actions two">
-              <button class="btn-primary" (click)="chooseNew()">Nouvelle sourate</button>
+              <button class="btn-primary" (click)="goToList.emit()">Nouvelle sourate</button>
               <button class="btn-close" (click)="close.emit()">Fermer</button>
             </div>
           </div>
-        } @else if (showSelector()) {
-          <!-- ===== Sélecteur enrichi (maquette C) ===== -->
-          <div class="modal-title">Choisis ta sourate</div>
-          <div class="modal-sub">Chacun étudie une sourate différente. Ensemble, on couvre tout le Coran.</div>
-
-          <div class="surah-list">
-            @for (s of surahs; track s.number) {
-              @let st = selState(s.number);
-              <button
-                class="srow"
-                [class.join]="st !== 'done'"
-                [disabled]="st === 'done'"
-                (click)="pickSurah(s.number)"
-              >
-                <span class="snum num">{{ s.number }}</span>
-                <span class="sinfo">
-                  <span class="sfr">{{ s.nameFr }}</span>
-                  <span class="say num">{{ s.ayahs }} v.</span>
-                  @if (st === 'prog') {
-                    <span class="tag prog">{{ progEmojis(s.number) }} en cours · rejoindre</span>
-                  } @else if (st === 'done') {
-                    <span class="tag done">✓ terminée</span>
-                  } @else if (progressFor(s.number) > 0) {
-                    <span class="tag me num">toi : v. {{ progressFor(s.number) }}</span>
-                  }
-                </span>
-                <span class="ar" lang="ar" dir="rtl">{{ s.nameAr }}</span>
-              </button>
-            }
-          </div>
-
-          <div class="modal-actions">
-            <button class="btn-close" (click)="close.emit()">Fermer</button>
+        } @else if (!activeSurahNumber()) {
+          <!-- ===== Aucune sourate en cours : le choix se fait dans l'écran Étude ===== -->
+          <div class="done-view">
+            <div class="done-emoji">📖</div>
+            <div class="done-title">Aucune sourate en cours</div>
+            <div class="done-sub">La liste des 114 sourates est sur l'écran Étude : touche celle que tu veux commencer.</div>
+            <div class="modal-actions two">
+              <button class="btn-primary" (click)="goToList.emit()">Voir la liste</button>
+              <button class="btn-close" (click)="close.emit()">Fermer</button>
+            </div>
           </div>
         } @else {
           <!-- ===== La piste : saisie quotidienne (maquette B) ===== -->
@@ -95,7 +70,7 @@ interface CoStudent {
           </button>
 
           <div class="mlinks">
-            <span (click)="openSelector()">Changer de sourate</span>
+            <span (click)="goToList.emit()">Changer de sourate</span>
             @if (studyDoneToday()) {
               <span (click)="onUnmark()">Décocher aujourd'hui</span>
             }
@@ -130,20 +105,6 @@ interface CoStudent {
       color: #1f2328;
       white-space: nowrap;
       line-height: 1.2;
-    }
-
-    .modal-title {
-      font-size: 18px;
-      font-weight: 600;
-      text-align: center;
-      margin-bottom: 6px;
-      color: #1f2328;
-    }
-    .modal-sub {
-      font-size: 13px;
-      text-align: center;
-      color: #656d76;
-      margin-bottom: 18px;
     }
 
     /* ===== La piste (maquette B) ===== */
@@ -248,66 +209,6 @@ interface CoStudent {
       touch-action: manipulation;
     }
 
-    /* ===== Sélecteur enrichi (maquette C) ===== */
-    .surah-list {
-      max-height: 52vh;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      border: 1px solid #eaeef2;
-      border-radius: 10px;
-      margin-bottom: 16px;
-      padding: 0 10px;
-    }
-    .srow {
-      width: 100%;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 9px 2px;
-      border: none;
-      border-bottom: 1px solid #eaeef2;
-      background: #ffffff;
-      text-align: left;
-      touch-action: manipulation;
-      font-family: inherit;
-    }
-    .srow:last-child { border-bottom: none; }
-    .srow.join { cursor: pointer; }
-    .srow.join:active { background: #fbf3e6; }
-    .srow[disabled] { cursor: default; }
-    .snum {
-      width: 20px;
-      flex-shrink: 0;
-      font-size: 11px;
-      color: #656d76;
-      text-align: center;
-    }
-    .sinfo {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 1px;
-    }
-    .sfr { font-size: 14px; font-weight: 600; color: #1f2328; }
-    .say { font-size: 11px; color: #656d76; }
-    .tag {
-      display: inline-block;
-      width: fit-content;
-      font-size: 10px;
-      font-weight: 600;
-      padding: 1px 8px;
-      border-radius: 999px;
-      margin-top: 3px;
-    }
-    .tag.done {
-      background: var(--gold-soft);
-      color: color-mix(in srgb, var(--gold) 78%, #1f2328);
-    }
-    .tag.prog { background: var(--color-surface-2); color: #1f2328; }
-    .tag.me { background: var(--green); color: #ffffff; }
-    .srow .ar { font-size: 22px; }
-
     .modal-actions {
       display: flex;
       justify-content: center;
@@ -366,27 +267,28 @@ export class StudyModalComponent {
   readonly badgesByUserId = input<Record<string, string>>({});
   readonly currentUserId = input<string | null>(null);
   readonly studyDoneToday = input<boolean>(false);
+  /**
+   * Sourate sur laquelle ouvrir la piste. La liste vient peut-être de
+   * l'enregistrer côté Firestore : on ne peut pas attendre que `currentUser`
+   * ait rattrapé son retard pour afficher le bon verset.
+   */
+  readonly initialSurah = input<number | null>(null);
   readonly isInitials = isInitialsBadge;
 
-  readonly selectSurah = output<number>();
   readonly markVerse = output<{ surah: number; verse: number }>();
   readonly completeSurah = output<{ surah: number; verse: number }>();
   readonly unmarkToday = output<void>();
   readonly close = output<void>();
-
-  readonly surahs = SURAHS;
+  /** Renvoie vers l'écran Étude, seul endroit où l'on choisit sa sourate. */
+  readonly goToList = output<void>();
 
   readonly verse = signal(0);
   private readonly localSurah = signal<number | null>(null);
-  private readonly forceSelector = signal(false);
   readonly completedView = signal(false);
   private readonly doneSurah = signal<number | null>(null);
 
   readonly activeSurahNumber = computed(() =>
-    this.localSurah() ?? this.currentUser()?.studySurah ?? null
-  );
-  readonly showSelector = computed(() =>
-    this.forceSelector() || this.activeSurahNumber() === null
+    this.localSurah() ?? this.initialSurah() ?? this.currentUser()?.studySurah ?? null
   );
   readonly surah = computed(() => {
     const n = this.activeSurahNumber();
@@ -447,55 +349,15 @@ export class StudyModalComponent {
     return n ? getSurah(n)?.nameFr ?? '' : '';
   });
 
-  // Union des sourates terminées (tous les membres visibles).
-  private readonly completedSet = computed(() => {
-    const set = new Set<number>();
-    for (const u of this.allUsers()) {
-      for (const n of u.studyCompletedSurahs ?? []) set.add(n);
-    }
-    return set;
-  });
-
-  // Sourate en cours -> emojis des membres (max 3 affichés). En cours prime sur terminée.
-  private readonly inProgressEmojis = computed(() => {
-    const map = new Map<number, string[]>();
-    for (const u of this.allUsers()) {
-      if (!u.studySurah) continue;
-      const em = this.badgesByUserId()[u.id] || '?';
-      const list = map.get(u.studySurah);
-      if (list) { if (list.length < 3) list.push(em); }
-      else map.set(u.studySurah, [em]);
-    }
-    return map;
-  });
-
   ngOnInit(): void {
-    this.verse.set(this.currentUser()?.studyVerse ?? 0);
-  }
-
-  selState(n: number): SelState {
-    if (this.inProgressEmojis().has(n)) return 'prog';
-    if (this.completedSet().has(n)) return 'done';
-    return 'free';
-  }
-
-  progEmojis(n: number): string {
-    const badges = this.inProgressEmojis().get(n) ?? [];
-    // Les emojis se collent en grappe ; des initiales collées seraient illisibles.
-    return badges.join(isInitialsBadge(badges[0] ?? '') ? ' ' : '');
-  }
-
-  // Sélection d'une sourate libre OU « rejoindre » une sourate en cours.
-  pickSurah(n: number): void {
-    if (this.selState(n) === 'done') return;
-    this.localSurah.set(n);
-    this.verse.set(Math.max(1, this.progressFor(n)));
-    this.forceSelector.set(false);
-    this.selectSurah.emit(n);
-  }
-
-  openSelector(): void {
-    this.forceSelector.set(true);
+    const target = this.initialSurah();
+    const current = this.currentUser()?.studySurah ?? null;
+    if (target !== null && target !== current) {
+      // Sourate rejointe ou reprise depuis la liste : on repart de sa mémoire.
+      this.verse.set(Math.max(1, this.progressFor(target)));
+    } else {
+      this.verse.set(this.currentUser()?.studyVerse ?? 0);
+    }
   }
 
   increment(amount: number): void {
@@ -527,13 +389,5 @@ export class StudyModalComponent {
   onUnmark(): void {
     this.unmarkToday.emit();
     this.close.emit();
-  }
-
-  chooseNew(): void {
-    this.completedView.set(false);
-    this.doneSurah.set(null);
-    this.localSurah.set(null);
-    this.verse.set(1);
-    this.forceSelector.set(true);
   }
 }

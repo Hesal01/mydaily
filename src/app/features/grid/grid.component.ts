@@ -224,11 +224,12 @@ interface CompletionItem {
             <!-- Screen 2: Study progress (salons qui suivent l'habitude Étude) -->
             @if (showStudyScreen()) {
               <div class="screen">
-                <div class="calendar-zone">
+                <div class="study-zone">
                   <app-study-progress
                     [users]="visibleUsers()"
                     [badgesByUserId]="badgesByUserId()"
                     [currentUserId]="currentUserId()"
+                    (openSurah)="onStudyOpenSurah($event)"
                   />
                 </div>
               </div>
@@ -272,10 +273,11 @@ interface CompletionItem {
           [badgesByUserId]="badgesByUserId()"
           [currentUserId]="currentUserId()"
           [studyDoneToday]="selectedDateUserCompletions().study"
-          (selectSurah)="onStudySelectSurah($event)"
+          [initialSurah]="studyModalSurah()"
           (markVerse)="onStudyMarkVerse($event)"
           (completeSurah)="onStudyComplete($event)"
           (unmarkToday)="onStudyUnmark()"
+          (goToList)="onStudyGoToList()"
           (close)="showStudyModal.set(false)"
         />
       }
@@ -331,6 +333,8 @@ interface CompletionItem {
       padding: 16px;
       padding-bottom: 0;
     }
+    /* L'écran Étude est une liste : ses cartes touchent les bords. */
+    .study-zone { padding: 0; }
     .graph { width: 100%; }
 
     .salon-bar {
@@ -693,6 +697,9 @@ export class GridComponent implements OnDestroy {
   readonly screenLabels = ['Habitudes', 'Lecture', 'Étude'];
   readonly showQuranModal = signal(false);
   readonly showStudyModal = signal(false);
+  /** Sourate sur laquelle ouvrir la piste, quand elle vient de la liste. */
+  readonly studyModalSurah = signal<number | null>(null);
+  private readonly STUDY_SCREEN = 2;
 
   readonly currentUserObj = computed(() => {
     const id = this.currentUserId();
@@ -992,6 +999,14 @@ export class GridComponent implements OnDestroy {
 
     if (habitId === 'study') {
       this.hapticService.tap();
+      const surah = this.currentUserObj()?.studySurah ?? null;
+      // Sans sourate en cours il n'y a pas de piste à ouvrir : le choix se
+      // fait dans la liste de l'écran Étude.
+      if (surah === null) {
+        this.setScreen(this.STUDY_SCREEN);
+        return;
+      }
+      this.studyModalSurah.set(surah);
       this.showStudyModal.set(true);
       return;
     }
@@ -1074,6 +1089,25 @@ export class GridComponent implements OnDestroy {
       u?.studySurah,
       u?.studyVerse ?? 0
     );
+  }
+
+  /**
+   * Touche sur une carte de la liste : la sourate devient celle du user (ou
+   * reste la sienne), puis la piste s'ouvre dessus.
+   */
+  async onStudyOpenSurah(surahNumber: number): Promise<void> {
+    this.studyModalSurah.set(surahNumber);
+    this.showStudyModal.set(true);
+    if (this.currentUserObj()?.studySurah !== surahNumber) {
+      await this.onStudySelectSurah(surahNumber);
+    }
+  }
+
+  /** Depuis la piste : revenir choisir dans la liste. */
+  onStudyGoToList(): void {
+    this.showStudyModal.set(false);
+    this.studyModalSurah.set(null);
+    this.setScreen(this.STUDY_SCREEN);
   }
 
   async onStudyMarkVerse(event: { surah: number; verse: number }): Promise<void> {

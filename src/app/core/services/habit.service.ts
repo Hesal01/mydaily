@@ -224,7 +224,8 @@ export class HabitService {
     const userDocRef = doc(this.firestore, 'users', userId);
     await setDoc(userDocRef, {
       studyVerse: safeVerse,
-      studyProgress: { [surah]: safeVerse }
+      studyProgress: { [surah]: safeVerse },
+      studyTouchedAt: { [surah]: Date.now() }
     }, { merge: true });
   }
 
@@ -267,7 +268,9 @@ export class HabitService {
     const docRef = doc(this.firestore, 'users', userId);
     const data: Record<string, unknown> = {
       studySurah: surahNumber,
-      studyVerse: Math.max(0, resumeVerse)
+      studyVerse: Math.max(0, resumeVerse),
+      // Choisir une sourate est une activité : elle passe en tête de l'écran Étude.
+      studyTouchedAt: { [surahNumber]: Date.now() }
     };
     if (prevSurah != null && prevSurah !== surahNumber && prevVerse != null && prevVerse > 0) {
       // Merge Firestore : fusionne cette clé de map sans écraser les autres.
@@ -286,6 +289,7 @@ export class HabitService {
     await setDoc(docRef, {
       studyCompletedSurahs: arrayUnion(surahNumber),
       studyProgress: { [surahNumber]: Math.max(0, totalVerses) },
+      studyTouchedAt: { [surahNumber]: Date.now() },
       studySurah: deleteField(),
       studyVerse: deleteField()
     }, { merge: true });

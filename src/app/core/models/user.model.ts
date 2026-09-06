@@ -30,6 +30,13 @@ export interface User {
   studyCompletedSurahs?: number[]; // numéros des sourates terminées
   studyProgress?: Record<string, number>; // mémoire par sourate : clé = n° sourate, valeur = dernier verset étudié
   /**
+   * Dernière activité sur une sourate, en millisecondes epoch, clé = n° sourate.
+   * Écrit au choix d'une sourate et à chaque validation de versets : c'est ce
+   * qui permet de montrer « les dernières sourates étudiées » en haut de
+   * l'écran Étude. Absent pour tout ce qui a été étudié avant son arrivée.
+   */
+  studyTouchedAt?: Record<string, number>;
+  /**
    * Appareils joignables par push, une entrée par navigateur. `fcmToken` est
    * l'ancienne forme mono-appareil, encore écrite pour les sessions qui n'ont
    * pas rechargé l'app ; les Cloud Functions lisent les deux.

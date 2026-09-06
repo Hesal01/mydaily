@@ -1,150 +1,195 @@
-import { Component, input, computed, signal } from '@angular/core';
+import { Component, input, output, computed, signal } from '@angular/core';
 import { User } from '../../../core/models/user.model';
 import { SURAHS, TOTAL_SURAHS } from '../../../core/constants/surahs.constants';
 import { isInitialsBadge } from '../../../core/constants/habits.constants';
 
-interface StudyRow {
-  userId: string;
-  badge: string;
-  nameFr: string;
-  surah: number;
-  verse: number;
-  ayahs: number;
-  pct: number;
-  mine: boolean;
-}
-
 interface Lane {
-  emoji: string;
+  badge: string;
   verse: number;
   pct: number;
   mine: boolean;
   riderLeft: string;
 }
 
-interface FriseSeg {
+/** Sourate en cours : la carte détaillée du haut d'écran. */
+interface ActiveCard {
   number: number;
   nameFr: string;
+  nameAr: string;
   ayahs: number;
-  flex: string;
-  title: string;
-  kind: 'done' | 'lanes' | 'gather' | 'free';
-  mine: boolean;        // done + terminée par le user courant
-  showInName: boolean;  // done + ayahs >= 60
-  showName: boolean;    // prog + ayahs >= 40
+  meta: string;
   lanes: Lane[];
-  packEmojis: string[];
-  packPlus: number;
+  extra: number;
+  mine: boolean;
+  action: string;
+  hint: string;
 }
 
-interface Picked {
+interface DoneRow {
   number: number;
   nameFr: string;
+  badges: string[];
+  extra: number;
+  mine: boolean;
+}
+
+interface FreeRow {
+  number: number;
+  nameFr: string;
+  nameAr: string;
   ayahs: number;
+  myVerse: number;
+}
+
+/** Un des 114 segments de la bande du haut (vue d'ensemble du Coran). */
+interface Seg {
+  number: number;
+  flex: string;
+  title: string;
+  kind: 'done' | 'prog' | 'free';
+  mine: boolean;
 }
 
 @Component({
   selector: 'app-study-progress',
   standalone: true,
   template: `
-    <div class="study-progress">
-      <div class="header">
-        <div class="title">Progression étude</div>
-        <div class="counter num">{{ completedCount() }}/{{ total }} sourates étudiées@if (mineCompletedCount() > 0) {<span class="mine-count"> · dont {{ mineCompletedCount() }} par toi</span>}</div>
+    <div class="study">
+      <div class="head">
+        <div class="title">Étude</div>
+        <div class="counter num">{{ completedCount() }}/{{ total }} sourates@if (mineCompletedCount() > 0) {<span class="mine-count"> · dont {{ mineCompletedCount() }} par toi</span>}</div>
       </div>
 
       <div class="legend">
-        <span class="k"><i class="sw done"></i> étudiée</span>
-        <span class="k"><i class="sw prog"></i> en cours</span>
-        <span class="k"><i class="sw free"></i> libre</span>
+        <span class="k"><i class="sw done"></i> la famille</span>
         <span class="k"><i class="sw me"></i> toi</span>
+        <span class="k"><i class="sw prog"></i> en cours</span>
       </div>
 
       <div class="frise">
         @for (seg of segments(); track seg.number) {
-          @switch (seg.kind) {
-            @case ('done') {
-              <div class="seg done" [class.mine]="seg.mine" [style.flex]="seg.flex" [attr.title]="seg.title">
-                @if (seg.showInName) { <span class="dinname">{{ seg.nameFr }}</span> }
-              </div>
-            }
-            @case ('gather') {
-              <div class="seg prog gather" [class.mine]="seg.mine" [style.flex]="seg.flex" [attr.title]="seg.title">
-                <span class="dpack">
-                  @for (em of seg.packEmojis; track $index) { <span class="pem" [class.initials]="isInitials(em)">{{ em }}</span> }
-                  <span class="pplus num">+{{ seg.packPlus }}</span>
-                </span>
-                @if (seg.showName) { <span class="dname">{{ seg.nameFr }}</span> }
-              </div>
-            }
-            @case ('lanes') {
-              <div class="seg prog" [class.mine]="seg.mine" [style.flex]="seg.flex" [attr.title]="seg.title">
-                @for (lane of seg.lanes; track $index) {
-                  <span class="dlane">
-                    <span class="dtrace" [class.me]="lane.mine" [style.width.%]="lane.pct"></span>
-                    <span class="drider" [class.initials]="isInitials(lane.emoji)" [style.left]="lane.riderLeft">{{ lane.emoji }}</span>
+          <i
+            class="fseg"
+            [class.done]="seg.kind === 'done'"
+            [class.prog]="seg.kind === 'prog'"
+            [class.mine]="seg.mine"
+            [style.flex]="seg.flex"
+            [attr.title]="seg.title"
+            (click)="jumpTo(seg.number)"
+          ></i>
+        }
+      </div>
+
+      <div class="search">
+        <i class="ph ph-magnifying-glass"></i>
+        <input
+          type="search"
+          inputmode="search"
+          placeholder="Chercher une sourate ou un numéro"
+          [value]="query()"
+          (input)="onQuery($event)"
+        />
+        @if (query()) {
+          <button class="clear" (click)="clearQuery()" aria-label="Effacer la recherche">✕</button>
+        }
+      </div>
+
+      @if (activeCards().length > 0) {
+        <div class="sechead">
+          <span class="l">En cours</span>
+          <span class="r num">{{ activeSummary() }}</span>
+        </div>
+        <div class="stack">
+          @for (card of activeCards(); track card.number) {
+            <button class="card" [id]="'s' + card.number" [class.mine]="card.mine" (click)="openSurah.emit(card.number)">
+              <span class="crow">
+                <span class="cnum num">{{ card.number }}</span>
+                <span class="cname">{{ card.nameFr }}</span>
+                <span class="car ar" lang="ar" dir="rtl">{{ card.nameAr }}</span>
+              </span>
+              <span class="cmeta num">{{ card.meta }}</span>
+              @for (lane of card.lanes; track $index) {
+                <span class="lane">
+                  <span class="track">
+                    <b [class.me]="lane.mine" [style.width.%]="lane.pct"></b>
+                    <span class="rider" [class.initials]="isInitials(lane.badge)" [style.left]="lane.riderLeft">{{ lane.badge }}</span>
                   </span>
-                }
-                @if (seg.showName) { <span class="dname">{{ seg.nameFr }}</span> }
+                  <span class="v num" [class.me]="lane.mine">v. {{ lane.verse }}/{{ card.ayahs }}</span>
+                </span>
+              }
+              @if (card.extra > 0) {
+                <span class="cextra num">+ {{ card.extra }} autres sur cette sourate</span>
+              }
+              <span class="cfoot">
+                <span class="act" [class.pri]="card.mine">{{ card.action }}</span>
+                @if (card.hint) { <span class="hint num">{{ card.hint }}</span> }
+              </span>
+            </button>
+          }
+        </div>
+      }
+
+      @if (doneRows().length > 0) {
+        <div class="sechead tap" (click)="doneOpen.set(!doneOpen())">
+          <span class="l">Terminées</span>
+          <span class="r num">{{ doneRows().length }} · {{ doneOpen() ? 'replier' : 'déplier' }}</span>
+        </div>
+        @if (doneOpen()) {
+          <div class="stack">
+            @for (row of doneRows(); track row.number) {
+              <div class="row done" [id]="'s' + row.number">
+                <span class="n num">{{ row.number }}</span>
+                <span class="nm">{{ row.nameFr }}</span>
+                <span class="tag ok" [class.me]="row.mine">✓</span>
+                <span class="who">
+                  @for (b of row.badges; track $index) { <span class="wb" [class.initials]="isInitials(b)">{{ b }}</span> }
+                  @if (row.extra > 0) { <span class="wp num">+{{ row.extra }}</span> }
+                </span>
               </div>
             }
-            @default {
-              <div class="seg free" [style.flex]="seg.flex" [attr.title]="seg.title" (click)="onPickFree(seg)"></div>
-            }
-          }
+          </div>
         }
-      </div>
+      }
 
-      <div class="dpick num">
-        @if (picked(); as p) {
-          <b>{{ p.number }}. {{ p.nameFr }}</b> — {{ p.ayahs }} v.
-        } @else {
-          Touche une sourate pour voir son nom
-        }
+      <div class="sechead">
+        <span class="l">Libres</span>
+        <span class="r num">{{ freeRows().length }}</span>
       </div>
-
-      @if (rows().length > 0) {
-        <div class="crew">
-          @for (row of rows(); track row.userId) {
-            <div class="crow" [class.me]="row.mine">
-              <span class="em" [class.initials]="isInitials(row.badge)">{{ row.badge }}</span>
-              <span class="cn">{{ row.nameFr }}</span>
-              <span class="cbar"><i [style.width.%]="row.pct"></i></span>
-              <span class="cv num">v. {{ row.verse }}/{{ row.ayahs }}</span>
-            </div>
+      @if (freeRows().length > 0) {
+        <div class="stack">
+          @for (row of freeRows(); track row.number) {
+            <button class="row" [id]="'s' + row.number" (click)="openSurah.emit(row.number)">
+              <span class="n num">{{ row.number }}</span>
+              <span class="nm">{{ row.nameFr }}</span>
+              <span class="ay num">{{ row.ayahs }} v.</span>
+              @if (row.myVerse > 0) { <span class="tag me num">toi : v. {{ row.myVerse }}</span> }
+              <span class="ar" lang="ar" dir="rtl">{{ row.nameAr }}</span>
+            </button>
           }
         </div>
       } @else {
-        <div class="empty">Personne n'a encore choisi de sourate.</div>
+        <div class="empty">Aucune sourate libre ne correspond.</div>
       }
     </div>
   `,
   styles: [`
-    .study-progress {
+    .study {
       --gold: #d97706;
       --gold-soft: color-mix(in srgb, #d97706 22%, #ffffff);
       --gold-line: color-mix(in srgb, #d97706 45%, transparent);
       --green: var(--color-success);
-      --green-soft: color-mix(in srgb, #2da44e 22%, #ffffff);
+      --green-soft: color-mix(in srgb, #2da44e 12%, #ffffff);
       --green-line: color-mix(in srgb, #2da44e 55%, transparent);
-      /* Co-étudiants sur MA sourate en cours : orange vif, lisible sur fond vert pâle. */
-      --other-orange: #ea8a1f;
-      --free: var(--color-surface-2);
-      padding: 8px 0 16px;
-      border-top: 1px solid var(--color-surface-1);
-      margin-top: 16px;
+      padding-bottom: 24px;
     }
     .num { font-variant-numeric: tabular-nums; }
+    .ar {
+      font-family: 'Geeza Pro', 'Al Bayan', 'Noto Naskh Arabic', 'Amiri', serif;
+      line-height: 1.2;
+    }
 
-    .header {
-      text-align: center;
-      margin-bottom: 6px;
-    }
-    .title {
-      font-size: 17px;
-      font-weight: 600;
-      color: var(--color-text);
-    }
+    .head { text-align: center; padding: 12px 16px 0; }
+    .title { font-size: 17px; font-weight: 600; color: var(--color-text); }
     .counter {
       font-size: 13px;
       font-weight: 600;
@@ -155,187 +200,257 @@ interface Picked {
 
     .legend {
       display: flex;
-      gap: 16px;
+      gap: 14px;
       justify-content: center;
       flex-wrap: wrap;
-      font-size: 12px;
+      font-size: 11.5px;
       color: var(--color-text-muted);
-      margin: 2px 0 18px;
+      margin: 7px 0 9px;
     }
-    .legend .k { display: inline-flex; align-items: center; gap: 6px; }
-    .sw { width: 13px; height: 13px; border-radius: 3px; display: inline-block; }
+    .legend .k { display: inline-flex; align-items: center; gap: 5px; }
+    .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
     .sw.done { background: var(--gold); }
     .sw.prog { background: var(--gold-soft); box-shadow: inset 0 0 0 1.5px var(--gold-line); }
-    .sw.free { background: var(--free); }
     .sw.me { background: var(--green); }
 
-    /* ===== Frise caravane ===== */
+    /* ===== Bande des 114 sourates : la vue d'ensemble, en une ligne ===== */
     .frise {
       display: flex;
       flex-wrap: wrap;
-      gap: 2px;
-      row-gap: 14px;
-      align-content: flex-start;
+      gap: 1.5px;
+      row-gap: 2.5px;
+      padding: 0 16px 14px;
     }
-    .seg {
-      height: 34px;
-      min-width: 4px;
-      border-radius: 4px;
+    .fseg {
+      height: 9px;
+      min-width: 3px;
+      border-radius: 2px;
+      background: var(--color-surface-2);
+      display: block;
+      cursor: pointer;
+    }
+    .fseg.done { background: var(--gold); }
+    .fseg.done.mine { background: var(--green); }
+    .fseg.prog { background: var(--gold-soft); box-shadow: inset 0 0 0 1px var(--gold-line); }
+    .fseg.prog.mine { background: var(--green-soft); box-shadow: inset 0 0 0 1px var(--green-line); }
+
+    .search {
       display: flex;
       align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      position: relative;
-      overflow: visible;
-      transition: background var(--duration-base) ease;
+      gap: 7px;
+      margin: 0 16px 4px;
+      padding: 7px 12px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-pill);
+      background: var(--color-surface-1);
+      color: var(--color-text-muted);
     }
-    .seg.done { background: var(--gold); }
-    .seg.done.mine { background: var(--green); }
-    .seg.prog {
-      background: var(--gold-soft);
-      box-shadow: inset 0 0 0 1.5px var(--gold-line);
-      flex-direction: column;
-      align-items: stretch;
-      gap: 2px;
+    .search input {
+      flex: 1;
+      min-width: 0;
+      border: none;
+      background: none;
+      outline: none;
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--color-text);
+      -webkit-appearance: none;
     }
-    .seg.prog.gather {
-      flex-direction: row;
-      align-items: center;
-      justify-content: center;
+    .search input::-webkit-search-cancel-button { display: none; }
+    .search .clear {
+      border: none;
+      background: none;
+      color: var(--color-text-muted);
+      font-size: 13px;
+      padding: 0 2px;
+      cursor: pointer;
+      touch-action: manipulation;
     }
-    /* Sourate en cours DU user courant (seul ou partagée) : vert pâle + liseré vert 2px. */
-    .seg.prog.mine {
-      background: var(--green-soft);
-      box-shadow: inset 0 0 0 2px var(--green-line);
-    }
-    .seg.free { background: var(--free); cursor: pointer; }
 
-    .dlane { position: relative; flex: 1; min-height: 0; }
-    .dtrace {
-      position: absolute;
-      left: 0; top: 0; bottom: 0;
-      background: var(--gold);
-      border-radius: 3px;
+    /* ===== En-têtes de section, collants au défilement ===== */
+    .sechead {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 16px 16px 6px;
+      position: sticky;
+      top: 0;
+      background: var(--color-bg);
+      z-index: 3;
     }
-    .dtrace.me { background: var(--green); }
-    /* Sur MA sourate en cours, les traces des AUTRES passent en orange (ma trace reste verte). */
-    .seg.prog.mine .dtrace:not(.me) { background: var(--other-orange); }
-    .drider {
-      position: absolute;
-      top: 50%;
-      z-index: 1;
-      font-size: 14px;
-      line-height: 1;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
+    .sechead.tap { cursor: pointer; touch-action: manipulation; }
+    .sechead .l {
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--color-text-muted);
     }
-    .dpack { position: relative; z-index: 1; display: flex; align-items: center; }
-    .dpack .pem { font-size: 14px; line-height: 1; margin-left: -5px; }
-    .dpack .pem:first-child { margin-left: 0; }
-    /* Badges en initiales : du texte a besoin d'être plus petit et gras qu'un emoji. */
-    .drider.initials, .dpack .pem.initials { font-size: 10px; font-weight: 700; }
-    .dpack .pem.initials { margin-left: 1px; }
-    .crow .em.initials { font-size: 12px; font-weight: 700; }
-    .pplus {
-      font-size: 10px;
+    .sechead .r { font-size: 11.5px; color: var(--color-text-muted); }
+
+    /* ===== Cartes et lignes : collées, séparées par un filet ===== */
+    .stack {
+      border-top: 1px solid var(--color-surface-2);
+      border-bottom: 1px solid var(--color-surface-2);
+    }
+    .card {
+      display: block;
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
+      border: none;
+      border-bottom: 1px solid var(--color-surface-2);
+      background: var(--color-bg);
+      color: var(--color-text);
+      padding: 11px 16px 12px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .card:last-child { border-bottom: none; }
+    .card:active { background: var(--color-surface-1); }
+    .card.mine {
+      background: var(--green-soft);
+      box-shadow: inset 3px 0 0 var(--green);
+    }
+    .card.mine:active { background: color-mix(in srgb, var(--green) 18%, #ffffff); }
+
+    .crow { display: flex; align-items: baseline; gap: 7px; }
+    .cnum {
+      font-size: 11px;
       font-weight: 700;
       color: var(--color-text-muted);
-      background: var(--color-bg);
-      border-radius: 999px;
-      padding: 1px 5px;
-      margin-left: 3px;
+      min-width: 20px;
     }
-    .dinname {
+    .cname { font-size: 14.5px; font-weight: 600; }
+    .car { margin-left: auto; font-size: 17px; color: var(--color-text); }
+    .cmeta {
+      display: block;
+      font-size: 11px;
+      color: var(--color-text-muted);
+      margin: 1px 0 8px 27px;
+    }
+
+    .lane {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin: 5px 0 0 27px;
+    }
+    .track {
       position: relative;
-      z-index: 1;
-      font-size: 9px;
-      font-weight: 600;
-      color: #ffffff;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 100%;
-      padding: 0 3px;
+      flex: 1;
+      height: 9px;
+      border-radius: 5px;
+      background: var(--color-surface-2);
     }
-    .dname {
+    .track b {
       position: absolute;
-      top: calc(100% + 1px);
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 8.5px;
-      font-weight: 600;
-      color: var(--color-text);
-      white-space: nowrap;
-      background: var(--color-bg);
-      padding: 0 3px;
-      border-radius: 3px;
-      z-index: 2;
+      left: 0; top: 0; bottom: 0;
+      border-radius: 5px;
+      background: var(--gold);
+      display: block;
+      transition: width var(--duration-slow) var(--ease-out);
+    }
+    .track b.me { background: var(--green); }
+    .rider {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 13px;
+      line-height: 1;
       pointer-events: none;
     }
-
-    .dpick {
-      text-align: center;
-      font-size: 12px;
+    .rider.initials { font-size: 9.5px; font-weight: 700; }
+    .lane .v {
+      flex-shrink: 0;
+      min-width: 56px;
+      text-align: right;
+      font-size: 10.5px;
       color: var(--color-text-muted);
-      margin-top: 10px;
-      min-height: 18px;
     }
-    .dpick b { color: var(--color-text); font-weight: 600; }
-
-    /* ===== Rangées membres ===== */
-    .crew {
-      margin-top: 16px;
+    .lane .v.me { color: var(--green); font-weight: 600; }
+    .cextra {
+      display: block;
+      font-size: 10.5px;
+      color: var(--color-text-muted);
+      margin: 6px 0 0 27px;
+    }
+    .cfoot {
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      gap: 9px;
+      margin: 10px 0 0 27px;
     }
-    .crow {
+    .act {
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 5px 11px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--color-border);
+      background: var(--color-bg);
+      color: var(--color-text);
+    }
+    .act.pri { background: var(--green); border-color: var(--green); color: #ffffff; }
+    .cfoot .hint { font-size: 10.5px; color: var(--color-text-muted); }
+
+    .row {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 4px;
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
+      padding: 9px 16px;
+      border: none;
       border-bottom: 1px solid var(--color-surface-2);
-      font-size: 12px;
-      border-radius: 6px;
-    }
-    .crow:last-child { border-bottom: none; }
-    .crow.me { background: color-mix(in srgb, var(--green) 8%, var(--color-bg)); }
-    .crow .em { width: 24px; text-align: center; font-size: 16px; flex-shrink: 0; }
-    .crow .cn {
-      width: 78px;
-      flex-shrink: 0;
-      font-weight: 600;
+      background: var(--color-bg);
       color: var(--color-text);
+      touch-action: manipulation;
+    }
+    .row:last-child { border-bottom: none; }
+    button.row { cursor: pointer; }
+    button.row:active { background: var(--color-surface-1); }
+    .row .n {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--color-text-muted);
+      min-width: 20px;
+      flex-shrink: 0;
+    }
+    .row .nm {
+      font-size: 13px;
+      font-weight: 500;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .cbar {
-      flex: 1;
-      height: 8px;
-      border-radius: 4px;
-      background: var(--free);
-      overflow: hidden;
-    }
-    .cbar i {
-      display: block;
-      height: 100%;
-      background: var(--gold);
-      border-radius: 4px;
-      transition: width var(--duration-slow) var(--ease-out);
-    }
-    .crow.me .cbar i { background: var(--green); }
-    .cv {
-      flex-shrink: 0;
-      min-width: 58px;
-      text-align: right;
+    .row.done .nm { color: var(--color-text-muted); }
+    .row .ay { font-size: 10.5px; color: var(--color-text-muted); flex-shrink: 0; }
+    .row .ar { margin-left: auto; font-size: 15px; color: var(--color-text-muted); flex-shrink: 0; }
+    .row .who { margin-left: auto; display: flex; align-items: center; gap: 1px; flex-shrink: 0; }
+    .row .wb { font-size: 13px; line-height: 1; }
+    .row .wb.initials { font-size: 10px; font-weight: 700; }
+    .row .wp { font-size: 10px; font-weight: 700; color: var(--color-text-muted); margin-left: 2px; }
+    .tag {
+      font-size: 9.5px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: var(--radius-pill);
+      background: var(--color-surface-1);
       color: var(--color-text-muted);
-      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
+    .tag.ok { background: var(--gold-soft); color: color-mix(in srgb, var(--gold) 80%, #1f2328); }
+    .tag.ok.me { background: color-mix(in srgb, var(--green) 18%, #ffffff); color: var(--color-success-dark); }
+    .tag.me { background: color-mix(in srgb, var(--green) 14%, #ffffff); color: var(--color-success-dark); }
+
     .empty {
       text-align: center;
-      font-size: 13px;
+      font-size: 12.5px;
       color: var(--color-text-muted);
-      padding: 14px 0 8px;
+      padding: 14px 16px;
     }
   `]
 })
@@ -343,14 +458,22 @@ export class StudyProgressComponent {
   readonly users = input.required<User[]>();
   readonly badgesByUserId = input.required<Record<string, string>>();
   readonly currentUserId = input.required<string | null>();
-  readonly isInitials = isInitialsBadge;
 
+  /** Ouvrir la piste sur cette sourate (la choisir si ce n'est pas déjà la sienne). */
+  readonly openSurah = output<number>();
+
+  readonly isInitials = isInitialsBadge;
   readonly total = TOTAL_SURAHS;
 
-  readonly picked = signal<Picked | null>(null);
+  readonly query = signal('');
+  readonly doneOpen = signal(true);
 
-  private readonly nameByNumber = new Map<number, string>(SURAHS.map(s => [s.number, s.nameFr]));
   private readonly ayahsByNumber = new Map<number, number>(SURAHS.map(s => [s.number, s.ayahs]));
+
+  private readonly me = computed(() => {
+    const id = this.currentUserId();
+    return this.users().find(u => u.id === id) ?? null;
+  });
 
   // Union des sourates terminées par tous les membres visibles.
   private readonly completedSet = computed(() => {
@@ -361,17 +484,14 @@ export class StudyProgressComponent {
     return set;
   });
 
-  // Sourates terminées par le user courant (colorées en vert + comptées « par toi »).
-  private readonly mineCompletedSet = computed(() => {
-    const meId = this.currentUserId();
-    const me = this.users().find(u => u.id === meId);
-    return new Set<number>(me?.studyCompletedSurahs ?? []);
-  });
+  private readonly mineCompletedSet = computed(
+    () => new Set<number>(this.me()?.studyCompletedSurahs ?? [])
+  );
 
   readonly completedCount = computed(() => this.completedSet().size);
   readonly mineCompletedCount = computed(() => this.mineCompletedSet().size);
 
-  // Sourate en cours -> membres qui l'étudient (prime sur « terminée »).
+  /** Sourate en cours -> les membres dessus (« en cours » prime sur « terminée »). */
   private readonly inProgress = computed(() => {
     const meId = this.currentUserId();
     const map = new Map<number, Lane[]>();
@@ -382,7 +502,7 @@ export class StudyProgressComponent {
       const verse = u.studyVerse ?? 0;
       const pct = ayahs > 0 ? Math.round((verse / ayahs) * 100) : 0;
       const lane: Lane = {
-        emoji: this.badgesByUserId()[u.id] || '?',
+        badge: this.badgesByUserId()[u.id] || '?',
         verse,
         pct,
         mine: u.id === meId,
@@ -394,75 +514,150 @@ export class StudyProgressComponent {
     return map;
   });
 
-  readonly segments = computed<FriseSeg[]>(() => {
+  /**
+   * Dernière activité connue sur une sourate, tous membres confondus : c'est ce
+   * qui met « la sourate d'hier soir » en haut de la pile. Le champ n'existe que
+   * depuis cette version — sans lui, l'ordre retombe sur le numéro de sourate.
+   */
+  private readonly touchedAt = computed(() => {
+    const map = new Map<number, number>();
+    for (const u of this.users()) {
+      for (const [key, at] of Object.entries(u.studyTouchedAt ?? {})) {
+        const n = Number(key);
+        if (!Number.isFinite(at)) continue;
+        if ((map.get(n) ?? 0) < at) map.set(n, at);
+      }
+    }
+    return map;
+  });
+
+  readonly segments = computed<Seg[]>(() => {
     const completed = this.completedSet();
-    const mine = this.mineCompletedSet();
+    const mineDone = this.mineCompletedSet();
     const prog = this.inProgress();
     return SURAHS.map(s => {
-      const base = Math.max(4, Math.round(s.ayahs * 0.5));
-      const flex = `${s.ayahs} 1 ${base}px`;
-      const seg: FriseSeg = {
-        number: s.number,
-        nameFr: s.nameFr,
-        ayahs: s.ayahs,
-        flex,
-        title: `${s.number}. ${s.nameFr} — ${s.ayahs} v.`,
-        kind: 'free',
-        mine: false,
-        showInName: false,
-        showName: false,
-        lanes: [],
-        packEmojis: [],
-        packPlus: 0
-      };
-
       const members = prog.get(s.number);
-      if (members && members.length > 0) {
-        seg.title = members.map(m => `${m.emoji} v. ${m.verse}/${s.ayahs}`).join(' · ') + ` — ${s.nameFr}`;
-        seg.showName = s.ayahs >= 40;
-        // Le user courant étudie cette sourate -> segment mis en vert (fond/liseré).
-        seg.mine = members.some(m => m.mine);
-        if (members.length >= 4) {
-          seg.kind = 'gather';
-          seg.packEmojis = members.slice(0, 3).map(m => m.emoji);
-          seg.packPlus = members.length - 3;
-        } else {
-          seg.kind = 'lanes';
-          seg.lanes = members;
-        }
-      } else if (completed.has(s.number)) {
-        seg.kind = 'done';
-        seg.mine = mine.has(s.number);
-        seg.showInName = s.ayahs >= 60;
-      }
-      return seg;
+      const kind: Seg['kind'] = members ? 'prog' : completed.has(s.number) ? 'done' : 'free';
+      return {
+        number: s.number,
+        flex: `${s.ayahs} 1 ${Math.max(3, Math.round(s.ayahs * 0.22))}px`,
+        title: `${s.number}. ${s.nameFr} — ${s.ayahs} v.`,
+        kind,
+        mine: members ? members.some(m => m.mine) : mineDone.has(s.number)
+      };
     });
   });
 
-  // Une rangée par membre actif visible, groupées par sourate (numéro croissant).
-  readonly rows = computed<StudyRow[]>(() => {
-    const meId = this.currentUserId();
-    return this.users()
-      .filter(u => !!u.studySurah)
-      .map(u => {
-        const surah = u.studySurah!;
-        const ayahs = this.ayahsByNumber.get(surah) ?? 0;
-        const verse = u.studyVerse ?? 0;
-        return {
-          userId: u.id,
-          badge: this.badgesByUserId()[u.id] || '?',
-          nameFr: this.nameByNumber.get(surah) ?? '',
-          surah,
-          verse,
-          ayahs,
-          pct: ayahs > 0 ? Math.round((verse / ayahs) * 100) : 0,
-          mine: u.id === meId
-        };
-      })
-      .sort((a, b) => a.surah - b.surah);
+  /** Les sourates en cours, la dernière touchée en premier. */
+  readonly activeCards = computed<ActiveCard[]>(() => {
+    const prog = this.inProgress();
+    const touched = this.touchedAt();
+    const myProgress = this.me()?.studyProgress ?? {};
+    const cards: ActiveCard[] = [];
+
+    for (const s of SURAHS) {
+      const members = prog.get(s.number);
+      if (!members || !this.matches(s.number, s.nameFr)) continue;
+
+      const lanes = [...members].sort((a, b) => b.verse - a.verse);
+      const mine = lanes.some(l => l.mine);
+      const myVerse = myProgress[String(s.number)] ?? 0;
+      cards.push({
+        number: s.number,
+        nameFr: s.nameFr,
+        nameAr: s.nameAr,
+        ayahs: s.ayahs,
+        meta: members.length > 1
+          ? `${s.ayahs} versets · ${mine ? `vous êtes ${members.length}` : `${members.length} personnes`}`
+          : `${s.ayahs} versets`,
+        lanes: lanes.slice(0, 4),
+        extra: Math.max(0, lanes.length - 4),
+        mine,
+        action: mine ? 'Continuer' : 'Rejoindre',
+        hint: !mine && myVerse > 0 ? `tu en es au verset ${myVerse}` : ''
+      });
+    }
+
+    return cards.sort((a, b) => (touched.get(b.number) ?? 0) - (touched.get(a.number) ?? 0) || a.number - b.number);
   });
 
-  onPickFree(seg: FriseSeg): void {
-    this.picked.set({ number: seg.number, nameFr: seg.nameFr, ayahs: seg.ayahs });
+  readonly activeSummary = computed(() => {
+    const cards = this.activeCards();
+    const people = cards.reduce((n, c) => n + c.lanes.length + c.extra, 0);
+    const s = cards.length > 1 ? 's' : '';
+    return `${cards.length} sourate${s} · ${people} personne${people > 1 ? 's' : ''}`;
+  });
+
+  readonly doneRows = computed<DoneRow[]>(() => {
+    const prog = this.inProgress();
+    const mineDone = this.mineCompletedSet();
+    const finishers = new Map<number, string[]>();
+    for (const u of this.users()) {
+      for (const n of u.studyCompletedSurahs ?? []) {
+        const badge = this.badgesByUserId()[u.id] || '?';
+        const list = finishers.get(n);
+        if (list) list.push(badge); else finishers.set(n, [badge]);
+      }
+    }
+
+    return SURAHS
+      .filter(s => finishers.has(s.number) && !prog.has(s.number) && this.matches(s.number, s.nameFr))
+      .map(s => {
+        const badges = finishers.get(s.number)!;
+        return {
+          number: s.number,
+          nameFr: s.nameFr,
+          badges: badges.slice(0, 4),
+          extra: Math.max(0, badges.length - 4),
+          mine: mineDone.has(s.number)
+        };
+      });
+  });
+
+  readonly freeRows = computed<FreeRow[]>(() => {
+    const prog = this.inProgress();
+    const completed = this.completedSet();
+    const myProgress = this.me()?.studyProgress ?? {};
+    return SURAHS
+      .filter(s => !prog.has(s.number) && !completed.has(s.number) && this.matches(s.number, s.nameFr))
+      .map(s => ({
+        number: s.number,
+        nameFr: s.nameFr,
+        nameAr: s.nameAr,
+        ayahs: s.ayahs,
+        myVerse: myProgress[String(s.number)] ?? 0
+      }));
+  });
+
+  onQuery(event: Event): void {
+    this.query.set((event.target as HTMLInputElement).value);
+  }
+
+  clearQuery(): void {
+    this.query.set('');
+  }
+
+  /** Toucher un segment de la bande amène à la sourate dans la liste. */
+  jumpTo(number: number): void {
+    this.query.set('');
+    this.doneOpen.set(true);
+    setTimeout(() => {
+      document.getElementById(`s${number}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+
+  /**
+   * Recherche par numéro ou par nom, accents et casse ignorés — « imran »
+   * doit trouver Āl-ʿImrān.
+   */
+  private matches(number: number, nameFr: string): boolean {
+    const q = this.query().trim();
+    if (!q) return true;
+    if (/^\d+$/.test(q)) return String(number).startsWith(q);
+    return this.fold(nameFr).includes(this.fold(q));
+  }
+
+  private fold(value: string): string {
+    return value.normalize('NFD').replace(/[\u0300-\u036f\u02bf\u02bc'\u2019-]/g, '').toLowerCase();
   }
 }
