@@ -280,22 +280,39 @@ export class HabitService {
   }
 
   /**
-   * Force l'avancée personnelle sur une sourate — remise à zéro, ou retour à
-   * une valeur précédente quand on annule. Ne touche qu'à ses propres versets :
-   * les co-étudiants gardent les leurs.
+   * Repartir de zéro sur une sourate : efface son avancée et, si c'était la
+   * sourate en cours, la quitte — le badge disparaît de la carte, et la
+   * sourate redevient libre si personne d'autre n'y est. Les versets des
+   * co-étudiants ne sont pas touchés.
    */
-  async setStudyVerseForSurah(
+  async resetStudySurah(userId: string, surahNumber: number, wasCurrent: boolean): Promise<void> {
+    const data: Record<string, unknown> = {
+      studyProgress: { [surahNumber]: 0 },
+      studyTouchedAt: { [surahNumber]: Date.now() }
+    };
+    if (wasCurrent) {
+      data['studySurah'] = deleteField();
+      data['studyVerse'] = deleteField();
+    }
+    await setDoc(doc(this.firestore, 'users', userId), data, { merge: true });
+  }
+
+  /** Annulation du « repartir de zéro » : rend le verset et la sourate quittée. */
+  async restoreStudySurah(
     userId: string,
     surahNumber: number,
     verse: number,
-    isCurrentSurah: boolean
+    becomeCurrent: boolean
   ): Promise<void> {
     const safeVerse = Math.max(0, verse);
     const data: Record<string, unknown> = {
       studyProgress: { [surahNumber]: safeVerse },
       studyTouchedAt: { [surahNumber]: Date.now() }
     };
-    if (isCurrentSurah) data['studyVerse'] = safeVerse;
+    if (becomeCurrent) {
+      data['studySurah'] = surahNumber;
+      data['studyVerse'] = safeVerse;
+    }
     await setDoc(doc(this.firestore, 'users', userId), data, { merge: true });
   }
 

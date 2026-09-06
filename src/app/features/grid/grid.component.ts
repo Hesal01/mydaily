@@ -1110,9 +1110,9 @@ export class GridComponent implements OnDestroy {
   }
 
   /**
-   * Remise à zéro de son avancée sur une sourate. Ne touche ni aux autres
-   * membres, ni à la journée cochée — d'où le « Annuler » du toast, qui rend
-   * le verset d'avant.
+   * Remise à zéro de son avancée sur une sourate : on la quitte aussi, donc
+   * le badge s'efface de la carte. Ne touche ni aux autres membres, ni à la
+   * journée cochée — d'où le « Annuler » du toast, qui rend l'état d'avant.
    */
   async onStudyReset(event: { surah: number; previousVerse: number }): Promise<void> {
     const userId = this.currentUserId();
@@ -1128,12 +1128,12 @@ export class GridComponent implements OnDestroy {
         label: 'Annuler',
         handler: async () => {
           this.hapticService.tap();
-          await this.habitService.setStudyVerseForSurah(userId, event.surah, event.previousVerse, isCurrent);
+          await this.habitService.restoreStudySurah(userId, event.surah, event.previousVerse, isCurrent);
         }
       }
     });
 
-    await this.habitService.setStudyVerseForSurah(userId, event.surah, 0, isCurrent);
+    await this.habitService.resetStudySurah(userId, event.surah, isCurrent);
   }
 
   /** Depuis la piste : revenir choisir dans la liste. */

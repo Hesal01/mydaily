@@ -72,7 +72,7 @@ interface CoStudent {
 
           @if (confirmReset()) {
             <div class="mlinks confirm">
-              <span class="ask">Effacer ton avancée sur cette sourate ?</span>
+              <span class="ask">Effacer ton avancée et quitter cette sourate ?</span>
               <span class="yes" (click)="doReset()">Oui, repartir de zéro</span>
               <span (click)="confirmReset.set(false)">Annuler</span>
             </div>
@@ -81,9 +81,7 @@ interface CoStudent {
               @if (!fromList()) {
                 <span (click)="goToList.emit()">Voir toutes les sourates</span>
               }
-              @if (verse() > 0) {
-                <span (click)="confirmReset.set(true)">Repartir de zéro</span>
-              }
+              <span (click)="confirmReset.set(true)">Repartir de zéro</span>
               @if (studyDoneToday()) {
                 <span (click)="onUnmark()">Décocher aujourd'hui</span>
               }
