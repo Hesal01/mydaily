@@ -24,6 +24,7 @@ interface ClaimRow {
   ayahs: number;
   from: number;
   to: number;
+  count: number;
   age: string;
   finishes: boolean;
 }
@@ -128,9 +129,10 @@ interface Seg {
               <span class="qtxt">
                 <span class="qt">
                   @if (row.finishes) { {{ row.nameFr }} terminée }
+                  @else if (row.count === 1) { {{ row.nameFr }}, verset {{ row.from }} }
                   @else { {{ row.nameFr }}, versets {{ row.from }} à {{ row.to }} }
                 </span>
-                <span class="qs num">{{ row.age }} · {{ row.to - row.from + 1 }} versets</span>
+                <span class="qs num">{{ row.age }} · {{ row.count }} verset{{ row.count > 1 ? 's' : '' }}</span>
               </span>
               <button class="qok" (click)="validateClaim.emit(row)">✓</button>
             </div>
@@ -746,6 +748,7 @@ export class StudyProgressComponent {
         ayahs,
         from,
         to,
+        count: to - from + 1,
         age: this.ageLabel(now - (u.studyClaimAt ?? now)),
         finishes: ayahs > 0 && to >= ayahs
       });
